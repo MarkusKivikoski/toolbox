@@ -1,0 +1,5 @@
+# GitHub Actions builds the static site and deploys the prebuilt `out/` folder,
+# so Netlify itself only needs to know where the files are. The site is kept
+# NOT connected to the Git repo, so Actions is the single source of deploys.
+[build]
+  publish = "out"
