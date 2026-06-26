@@ -3,7 +3,7 @@
 A small collection of focused, self-contained web tools — built with Next.js (App Router) and Tailwind CSS.
 
 <!-- Replace YOUR_BADGE_ID / your-site after creating the Netlify site (Site configuration → Status badges). -->
-[![Netlify Status](https://api.netlify.com/api/v1/badges/YOUR_BADGE_ID/deploy-status)](https://app.netlify.com/sites/your-site/deploys)
+[![Running on Netlify](https://macbox.netlify.app)]
 
 ## Tools
 
