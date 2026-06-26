@@ -33,8 +33,11 @@ const DEFAULT_INPUT: InvestingInput = {
   retirement: {
     enabled: true,
     mode: "fixed",
+    basis: "net",
     monthlyWithdrawal: 2500,
     annualReturnPct: 5,
+    capitalGainsTaxPct: 30,
+    usePresumedCost: true,
   },
   inflationPct: 0,
 };
@@ -50,8 +53,11 @@ const BLANK_INPUT: InvestingInput = {
   retirement: {
     enabled: false,
     mode: "fixed",
+    basis: "net",
     monthlyWithdrawal: 1500,
     annualReturnPct: 4,
+    capitalGainsTaxPct: 30,
+    usePresumedCost: true,
   },
   inflationPct: 0,
 };
@@ -235,6 +241,7 @@ export default function InvestingCalculator() {
 
   const lasts = result.depletionYear === null;
   const spendDown = result.withdrawalMode === "spendDown";
+  const isNet = result.withdrawalBasis === "net";
   // depletionYear is measured from today (year 0); convert to "into retirement".
   const depletionIntoRetirement =
     result.depletionYear === null
@@ -395,32 +402,56 @@ export default function InvestingCalculator() {
 
             {input.retirement.enabled && (
               <div className="mt-4 space-y-4">
-                <div>
-                  <span className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    How to withdraw
-                  </span>
-                  <div className="grid w-full grid-cols-2 gap-1 rounded-lg border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-700 dark:bg-zinc-800/60">
-                    {(["fixed", "spendDown"] as const).map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => setRetirement({ mode: m })}
-                        className={`rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
-                          input.retirement.mode === m
-                            ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-100"
-                            : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-                        }`}
-                      >
-                        {m === "fixed" ? "Fixed amount" : "Spend it all"}
-                      </button>
-                    ))}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <span className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                      How to withdraw
+                    </span>
+                    <div className="grid w-full grid-cols-2 gap-1 rounded-lg border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-700 dark:bg-zinc-800/60">
+                      {(["fixed", "spendDown"] as const).map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setRetirement({ mode: m })}
+                          className={`rounded-md px-2 py-2.5 text-sm font-medium transition-colors ${
+                            input.retirement.mode === m
+                              ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-100"
+                              : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                          }`}
+                        >
+                          {m === "fixed" ? "Fixed amount" : "Spend it all"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                      Amount basis
+                    </span>
+                    <div className="grid w-full grid-cols-2 gap-1 rounded-lg border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-700 dark:bg-zinc-800/60">
+                      {(["net", "gross"] as const).map((b) => (
+                        <button
+                          key={b}
+                          type="button"
+                          onClick={() => setRetirement({ basis: b })}
+                          className={`rounded-md px-2 py-2.5 text-sm font-medium transition-colors ${
+                            input.retirement.basis === b
+                              ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-100"
+                              : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                          }`}
+                        >
+                          {b === "net" ? "Net (after tax)" : "Gross (pre-tax)"}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {input.retirement.mode === "fixed" ? (
                     <NumberField
-                      label="Withdraw / month"
+                      label={isNet ? "Spend / month (net)" : "Sell / month (gross)"}
                       value={input.retirement.monthlyWithdrawal}
                       onChange={(n) => setRetirement({ monthlyWithdrawal: n })}
                       prefix="€"
@@ -428,17 +459,16 @@ export default function InvestingCalculator() {
                   ) : (
                     <div>
                       <span className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                        You can withdraw
+                        You can {isNet ? "spend" : "sell"}
                       </span>
                       <div className="rounded-lg border border-dashed border-emerald-400 bg-emerald-50/50 px-3 py-2.5 text-sm font-semibold tabular-nums text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300 sm:py-2">
-                        ≈ {formatEur(result.firstMonthlyWithdrawal)} / mo
+                        ≈ {formatEur(isNet ? result.firstMonthlyNet : result.firstMonthlyGross)}/mo {isNet ? "net" : "gross"}
                       </div>
                       <span className="mt-1 block text-xs text-zinc-400">
-                        {input.inflationPct > 0
-                          ? `Rises ${input.inflationPct}%/yr → ≈ ${formatEur(
-                              result.lastMonthlyWithdrawal
-                            )} at age ${result.lifeExpectancy}`
-                          : "Constant — set inflation under Advanced to grow it"}
+                        {isNet
+                          ? `selling ≈ ${formatEur(result.firstMonthlyGross)} gross`
+                          : `≈ ${formatEur(result.firstMonthlyNet)} net after tax`}
+                        {input.inflationPct > 0 ? ", rising with inflation" : ""}
                       </span>
                     </div>
                   )}
@@ -460,7 +490,32 @@ export default function InvestingCalculator() {
                     suffix="%"
                     hint="Often lower / safer than while saving."
                   />
+                  <NumberField
+                    label="Capital gains tax"
+                    value={input.retirement.capitalGainsTaxPct}
+                    onChange={(n) => setRetirement({ capitalGainsTaxPct: n })}
+                    suffix="%"
+                    hint="Finland: 30%"
+                  />
                 </div>
+
+                <label className="flex cursor-pointer items-start justify-between gap-3 py-1">
+                  <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                    Apply hankintameno-olettama
+                    <span className="mt-0.5 block text-xs text-zinc-400">
+                      Finnish presumed acquisition cost — taxes at most 60% of a
+                      sale (assumes holdings of 10+ years).
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={input.retirement.usePresumedCost}
+                    onChange={(e) =>
+                      setRetirement({ usePresumedCost: e.target.checked })
+                    }
+                    className="mt-0.5 h-5 w-5 flex-shrink-0 accent-emerald-500"
+                  />
+                </label>
               </div>
             )}
           </div>
@@ -546,17 +601,22 @@ export default function InvestingCalculator() {
             <p className="mt-1 text-sm text-zinc-500">
               {spendDown ? (
                 <>
-                  Spending down to ≈€0 by age {result.lifeExpectancy} — taking ≈
-                  {formatEur(result.firstMonthlyWithdrawal)}/month
+                  Spending down to ≈€0 by age {result.lifeExpectancy} — you can{" "}
+                  {isNet ? "spend" : "sell"} ≈
+                  {formatEur(
+                    isNet ? result.firstMonthlyNet : result.firstMonthlyGross
+                  )}
+                  /mo {isNet ? "net" : "gross"}
                   {input.inflationPct > 0 ? " (rising with inflation)" : ""} from
                   age {result.retirementAge} at {input.retirement.annualReturnPct}
                   %.
                 </>
               ) : (
                 <>
-                  Taking {formatEur(input.retirement.monthlyWithdrawal)}/month from
-                  age {result.retirementAge} to {result.lifeExpectancy} —{" "}
-                  {result.retirementYears} years at{" "}
+                  {isNet ? "Living on" : "Selling"}{" "}
+                  {formatEur(input.retirement.monthlyWithdrawal)}/month{" "}
+                  {isNet ? "net" : "gross"} from age {result.retirementAge} to{" "}
+                  {result.lifeExpectancy} — {result.retirementYears} years at{" "}
                   {input.retirement.annualReturnPct}%.
                 </>
               )}
@@ -564,19 +624,32 @@ export default function InvestingCalculator() {
 
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <StatTile
-                label="Total withdrawn"
-                value={formatEur(result.totalWithdrawn)}
+                label="Monthly income (net)"
+                value={`≈ ${formatEur(result.firstMonthlyNet)}`}
+                accent="emerald"
+                sub={
+                  input.inflationPct > 0
+                    ? `→ ${formatEur(result.lastMonthlyNet)} at age ${result.lifeExpectancy}`
+                    : "after tax"
+                }
+              />
+              <StatTile
+                label="Capital gains tax"
+                value={formatEur(result.totalTax)}
+                accent="amber"
+                sub={
+                  result.totalWithdrawn > 0
+                    ? `≈ ${Math.round(
+                        (result.totalTax / result.totalWithdrawn) * 100
+                      )}% of sales`
+                    : "over retirement"
+                }
               />
               {spendDown ? (
                 <StatTile
-                  label="Monthly income"
-                  value={`≈ ${formatEur(result.firstMonthlyWithdrawal)}`}
-                  accent="emerald"
-                  sub={
-                    input.inflationPct > 0
-                      ? `→ ${formatEur(result.lastMonthlyWithdrawal)} at age ${result.lifeExpectancy}`
-                      : "constant amount"
-                  }
+                  label="Lifetime spending"
+                  value={formatEur(result.totalNet)}
+                  sub="net, after tax"
                 />
               ) : (
                 <StatTile
@@ -594,13 +667,6 @@ export default function InvestingCalculator() {
                   }
                 />
               )}
-              <StatTile
-                label="Lifetime total"
-                value={formatEur(
-                  result.totalWithdrawn + result.finalBalance
-                )}
-                sub="withdrawn + left over"
-              />
             </div>
 
             <div
@@ -612,11 +678,12 @@ export default function InvestingCalculator() {
             >
               {spendDown ? (
                 <>
-                  This is the most you can draw while still reaching age{" "}
-                  {result.lifeExpectancy} — the balance runs down to ≈€0 right at
-                  the end
+                  This is the most you can {isNet ? "spend" : "sell"} while still
+                  reaching age {result.lifeExpectancy} — the pot runs down to ≈€0
+                  at the end, after ≈{formatEur(result.totalTax)} of capital-gains
+                  tax
                   {input.inflationPct > 0
-                    ? ", with your spending keeping pace with inflation."
+                    ? " and with spending keeping pace with inflation."
                     : "."}
                 </>
               ) : lasts ? (

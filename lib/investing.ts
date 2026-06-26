@@ -3,6 +3,11 @@
 // Timeline is driven by age:
 //   - Saving runs from `currentAge` to `retirementAge`.
 //   - Drawdown runs from `retirementAge` to `lifeExpectancy`.
+//
+// Retirement withdrawals are taxed: selling realises a proportional share of the
+// portfolio's embedded gain (average cost basis), and that gain is taxed at the
+// capital-gains rate. Optionally Finland's "hankintameno-olettama" caps the
+// taxable gain at 60% of the sale (assuming holdings of 10+ years).
 
 export type ContributionPhase = {
   id: string;
@@ -14,16 +19,24 @@ export type ContributionPhase = {
 };
 
 export type WithdrawalMode = "fixed" | "spendDown";
+/** Whether the entered/target amount is after-tax spending or the pre-tax sale. */
+export type WithdrawalBasis = "net" | "gross";
 
 export type RetirementSettings = {
   enabled: boolean;
   /** "fixed" = withdraw a set amount; "spendDown" = take out as much as
    *  possible so the balance hits ≈0 at life expectancy. */
   mode: WithdrawalMode;
-  /** Amount withdrawn every month to live on (used in "fixed" mode). */
+  /** Does the amount mean net (after-tax spending) or gross (amount sold)? */
+  basis: WithdrawalBasis;
+  /** Amount withdrawn every month (used in "fixed" mode), in `basis` terms. */
   monthlyWithdrawal: number;
   /** Expected yearly return while retired (often lower / more conservative). */
   annualReturnPct: number;
+  /** Capital-gains tax on the realised gain portion, in percent (Finland: 30). */
+  capitalGainsTaxPct: number;
+  /** Apply Finland's presumed acquisition cost (caps taxable gain at 60% of sale). */
+  usePresumedCost: boolean;
 };
 
 export type InvestingInput = {
@@ -74,14 +87,20 @@ export type InvestingResult = {
   totalContributions: number;
   /** Investment gains earned during the saving phase. */
   accumulationGrowth: number;
-  /** Sum of everything withdrawn during retirement. */
+  /** Total gross amount sold from the portfolio during retirement. */
   totalWithdrawn: number;
-  /** Which withdrawal strategy was applied. */
+  /** Total after-tax money the retiree got to spend. */
+  totalNet: number;
+  /** Total capital-gains tax paid during retirement. */
+  totalTax: number;
   withdrawalMode: WithdrawalMode;
-  /** Monthly withdrawal in the first retirement year (the figure to show). */
-  firstMonthlyWithdrawal: number;
-  /** Monthly withdrawal in the final retirement year (after inflation step-ups). */
-  lastMonthlyWithdrawal: number;
+  withdrawalBasis: WithdrawalBasis;
+  /** First-year monthly figures (what to display). */
+  firstMonthlyNet: number;
+  firstMonthlyGross: number;
+  /** Final-year monthly figures (after inflation step-ups). */
+  lastMonthlyNet: number;
+  lastMonthlyGross: number;
   /** Fractional year (from today) the money runs out, or null if it lasts. */
   depletionYear: number | null;
   /** Age the money runs out, or null if it lasts. */
@@ -89,6 +108,10 @@ export type InvestingResult = {
   /** Final balance expressed in today's money. */
   realFinalBalance: number;
 };
+
+// Finland's "hankintameno-olettama" for holdings ≥ 10 years: deduct 40% of the
+// sale price as presumed cost, so at most 60% of the sale is taxable gain.
+const PRESUMED_TAXABLE_RATE = 0.6;
 
 const num = (v: number): number => (Number.isFinite(v) ? v : 0);
 
@@ -102,28 +125,139 @@ function monthlyRate(annualReturnPct: number): number {
   return Math.pow(1 + num(annualReturnPct) / 100, 1 / 12) - 1;
 }
 
+type RetSimOpts = {
+  startBalance: number;
+  startCostBasis: number;
+  retRate: number;
+  months: number;
+  inflation: number;
+  /** Year-1 monthly amount, in `isNet` terms; later years step up with inflation. */
+  base: number;
+  isNet: boolean;
+  taxRate: number; // fraction, e.g. 0.30
+  usePresumed: boolean;
+  accMonths: number; // offset so depletion is reported as a global month
+};
+
+type RetSim = {
+  finalBalance: number;
+  totalGross: number;
+  totalNet: number;
+  totalTax: number;
+  depletionMonth: number | null;
+  yearEndBalances: number[];
+  firstMonthNet: number;
+  firstMonthGross: number;
+  lastYearNet: number;
+  lastYearGross: number;
+};
+
 /**
- * First-year monthly withdrawal that drains `balance` to exactly 0 over `months`,
- * where withdrawals step up once per year by `annualInflation` (so real spending
- * stays flat). Returns the first-year amount W0; later years are W0·(1+g)^year.
+ * Month-by-month retirement drawdown with capital-gains tax.
  *
- * Because the balance is linear in W0, this is the closed-form solution to
- * `balance·(1+r)^n − W0·Σ (1+g)^floor(m/12)·(1+r)^(n-1-m) = 0`.
+ * Each month: the balance grows, then a gross amount is sold. The realised gain
+ * is the sold fraction of the portfolio's embedded gain (average cost basis);
+ * tax is `taxRate` on that gain (optionally capped by the presumed-cost rule).
+ * In "net" mode the sale is grossed up so the after-tax amount equals the target.
  */
-export function solveSpendDownWithdrawal(
-  balance: number,
-  monthlyReturn: number,
-  months: number,
-  annualInflation: number
-): number {
-  if (months <= 0 || balance <= 0) return 0;
-  let denom = 0;
-  for (let m = 0; m < months; m++) {
-    const step = Math.pow(1 + annualInflation, Math.floor(m / 12));
-    denom += step * Math.pow(1 + monthlyReturn, months - 1 - m);
+function simulateRetirement(o: RetSimOpts): RetSim {
+  let balance = o.startBalance;
+  let costBasis = o.startCostBasis;
+  let totalGross = 0;
+  let totalNet = 0;
+  let totalTax = 0;
+  let depletionMonth: number | null = null;
+  const yearEndBalances: number[] = [];
+  let firstMonthNet = 0;
+  let firstMonthGross = 0;
+  let lastYearNet = 0;
+  let lastYearGross = 0;
+  const years = Math.ceil(o.months / 12);
+
+  for (let j = 0; j < o.months; j++) {
+    const yearIndex = Math.floor(j / 12);
+    const stepped = o.base * Math.pow(1 + o.inflation, yearIndex);
+    const grown = balance * (1 + o.retRate);
+    const gainFrac = grown > 0 ? Math.max(0, (grown - costBasis) / grown) : 0;
+    const taxableRate = o.usePresumed
+      ? Math.min(gainFrac, PRESUMED_TAXABLE_RATE)
+      : gainFrac;
+    const taxPerGross = o.taxRate * taxableRate; // tax as a fraction of the sale
+
+    let gross = o.isNet
+      ? taxPerGross < 1
+        ? stepped / (1 - taxPerGross)
+        : Infinity
+      : stepped;
+
+    let tax: number;
+    let net: number;
+    if (!(gross < grown)) {
+      // Not enough left — liquidate the remainder.
+      gross = grown;
+      tax = gross * taxPerGross;
+      net = gross - tax;
+      balance = 0;
+      costBasis = 0;
+      if (depletionMonth === null) depletionMonth = o.accMonths + j + 1;
+    } else {
+      tax = gross * taxPerGross;
+      net = gross - tax;
+      const fractionSold = grown > 0 ? gross / grown : 0;
+      costBasis = costBasis * (1 - fractionSold);
+      balance = grown - gross;
+    }
+
+    totalGross += gross;
+    totalTax += tax;
+    totalNet += net;
+
+    if (j === 0) {
+      firstMonthNet = net;
+      firstMonthGross = gross;
+    }
+    if (j === (years - 1) * 12) {
+      lastYearNet = net;
+      lastYearGross = gross;
+    }
+    if ((j + 1) % 12 === 0) yearEndBalances.push(balance);
   }
-  if (denom <= 0) return 0;
-  return (balance * Math.pow(1 + monthlyReturn, months)) / denom;
+
+  return {
+    finalBalance: balance,
+    totalGross,
+    totalNet,
+    totalTax,
+    depletionMonth,
+    yearEndBalances,
+    firstMonthNet,
+    firstMonthGross,
+    lastYearNet,
+    lastYearGross,
+  };
+}
+
+/**
+ * Year-1 monthly base (net or gross per `isNet`) that drains the pot to ≈0 at the
+ * end. Tax + the presumed-cost cap make this non-linear, so we bisect — the final
+ * balance is monotonically decreasing in the base, so this converges quickly.
+ */
+function solveSpendDownBase(o: Omit<RetSimOpts, "base">): number {
+  if (o.months <= 0 || o.startBalance <= 0) return 0;
+  const finalFor = (base: number) =>
+    simulateRetirement({ ...o, base }).finalBalance;
+
+  let lo = 0;
+  let hi = Math.max(1, o.startBalance / o.months);
+  let guard = 0;
+  while (finalFor(hi) > 1 && guard++ < 100) hi *= 2;
+
+  for (let i = 0; i < 80; i++) {
+    const mid = (lo + hi) / 2;
+    if (finalFor(mid) > 0.5) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
 }
 
 /** Fill in any missing/invalid fields — used when loading saved or older data. */
@@ -146,8 +280,11 @@ export function normalizeInput(p: Partial<InvestingInput> | null | undefined): I
     retirement: {
       enabled: Boolean(src.retirement?.enabled),
       mode: src.retirement?.mode === "spendDown" ? "spendDown" : "fixed",
+      basis: src.retirement?.basis === "gross" ? "gross" : "net",
       monthlyWithdrawal: numOr(src.retirement?.monthlyWithdrawal, 1500),
       annualReturnPct: numOr(src.retirement?.annualReturnPct, 4),
+      capitalGainsTaxPct: numOr(src.retirement?.capitalGainsTaxPct, 30),
+      usePresumedCost: src.retirement?.usePresumedCost !== false,
     },
     inflationPct: numOr(src.inflationPct, 0),
   };
@@ -162,6 +299,7 @@ export function normalizeInput(p: Partial<InvestingInput> | null | undefined): I
  *  - Withdrawals are taken at the end of each month, after that month's growth.
  *  - The final contribution phase continues until retirement age; earlier phases
  *    last their stated number of years.
+ *  - The starting balance is treated as having a cost basis equal to its value.
  */
 export function calculateProjection(input: InvestingInput): InvestingResult {
   const startingBalance = Math.max(0, num(input.startingBalance));
@@ -231,53 +369,47 @@ export function calculateProjection(input: InvestingInput): InvestingResult {
   const endOfAccumulationBalance = balance;
   const accumulationGrowth =
     endOfAccumulationBalance - startingBalance - totalContributions;
+  // Cost basis at retirement = everything paid in (no sales happened yet).
+  const costBasisAtRetirement = startingBalance + totalContributions;
 
   // ---- Retirement phase ----
-  const retRate = monthlyRate(input.retirement.annualReturnPct);
-  const retMonths = retirementYears * 12;
-  const spendDown = input.retirement.mode === "spendDown";
-  // In spend-down mode the first-year amount is solved so the pot ends at ≈0;
-  // each later year steps up with inflation. In fixed mode it's the entered amount.
-  const baseWithdrawal = spendDown
-    ? solveSpendDownWithdrawal(endOfAccumulationBalance, retRate, retMonths, inflation)
-    : Math.max(0, num(input.retirement.monthlyWithdrawal));
+  const ret = input.retirement;
+  const isNet = ret.basis === "net";
+  const simBase: Omit<RetSimOpts, "base"> = {
+    startBalance: endOfAccumulationBalance,
+    startCostBasis: costBasisAtRetirement,
+    retRate: monthlyRate(ret.annualReturnPct),
+    months: retirementYears * 12,
+    inflation,
+    isNet,
+    taxRate: Math.max(0, num(ret.capitalGainsTaxPct)) / 100,
+    usePresumed: ret.usePresumedCost,
+    accMonths,
+  };
 
-  let totalWithdrawn = 0;
-  let depletionMonth: number | null = null;
+  const base =
+    ret.mode === "spendDown"
+      ? solveSpendDownBase(simBase)
+      : Math.max(0, num(ret.monthlyWithdrawal));
+  const sim = simulateRetirement({ ...simBase, base });
 
-  for (let j = 0; j < retMonths; j++) {
-    const w = spendDown
-      ? baseWithdrawal * Math.pow(1 + inflation, Math.floor(j / 12))
-      : baseWithdrawal;
-    const grown = balance * (1 + retRate);
-    if (grown <= w) {
-      // Last of the money: only what's left can be taken out.
-      totalWithdrawn += grown;
-      balance = 0;
-      if (depletionMonth === null) depletionMonth = accMonths + j + 1;
-    } else {
-      balance = grown - w;
-      totalWithdrawn += w;
-    }
-    if ((j + 1) % 12 === 0) {
-      const year = accumulationYears + (j + 1) / 12;
-      points.push({
-        year,
-        age: currentAge + year,
-        stage: "retirement",
-        balance,
-        contributed,
-        realBalance: balance / realFactor(year),
-      });
-    }
+  // Retirement year points.
+  for (let k = 0; k < sim.yearEndBalances.length; k++) {
+    const year = accumulationYears + k + 1;
+    const bal = sim.yearEndBalances[k];
+    points.push({
+      year,
+      age: currentAge + year,
+      stage: "retirement",
+      balance: bal,
+      contributed,
+      realBalance: bal / realFactor(year),
+    });
   }
 
   const totalYears = accumulationYears + retirementYears;
-  const depletionYear = depletionMonth === null ? null : depletionMonth / 12;
-  const lastMonthlyWithdrawal =
-    retirementYears > 0
-      ? baseWithdrawal * Math.pow(1 + inflation, retirementYears - 1)
-      : baseWithdrawal;
+  const depletionYear =
+    sim.depletionMonth === null ? null : sim.depletionMonth / 12;
 
   return {
     points,
@@ -289,15 +421,20 @@ export function calculateProjection(input: InvestingInput): InvestingResult {
     totalYears,
     startingBalance,
     endOfAccumulationBalance,
-    finalBalance: balance,
+    finalBalance: sim.finalBalance,
     totalContributions,
     accumulationGrowth,
-    totalWithdrawn,
-    withdrawalMode: input.retirement.mode,
-    firstMonthlyWithdrawal: baseWithdrawal,
-    lastMonthlyWithdrawal,
+    totalWithdrawn: sim.totalGross,
+    totalNet: sim.totalNet,
+    totalTax: sim.totalTax,
+    withdrawalMode: ret.mode,
+    withdrawalBasis: ret.basis,
+    firstMonthlyNet: sim.firstMonthNet,
+    firstMonthlyGross: sim.firstMonthGross,
+    lastMonthlyNet: sim.lastYearNet,
+    lastMonthlyGross: sim.lastYearGross,
     depletionYear,
     depletionAge: depletionYear === null ? null : currentAge + depletionYear,
-    realFinalBalance: balance / realFactor(totalYears),
+    realFinalBalance: sim.finalBalance / realFactor(totalYears),
   };
 }
