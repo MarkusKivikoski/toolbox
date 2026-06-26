@@ -37,6 +37,13 @@ export type RetirementSettings = {
   capitalGainsTaxPct: number;
   /** Apply Finland's presumed acquisition cost (caps taxable gain at 60% of sale). */
   usePresumedCost: boolean;
+  /** Optional kansaneläke (state pension) gross €/month when it starts; 0 = off.
+   *  External income — added to monthly income, never touches the portfolio. */
+  kansanelake: number;
+  /** Tax rate on the kansaneläke, in percent. */
+  kansanelakeTaxPct: number;
+  /** Age the kansaneläke starts paying (may differ from retirement age). */
+  kansanelakeStartAge: number;
 };
 
 export type InvestingInput = {
@@ -101,6 +108,17 @@ export type InvestingResult = {
   /** Final-year monthly figures (after inflation step-ups). */
   lastMonthlyNet: number;
   lastMonthlyGross: number;
+  /** Kansaneläke (state pension) — external income, additive only. */
+  pensionStartAge: number;
+  /** Net kansaneläke per month at the moment it starts (0 if none). */
+  pensionNetMonthly: number;
+  /** Total net kansaneläke received over retirement. */
+  totalPensionNet: number;
+  /** First-/final-year total monthly net income = investment net + pension net. */
+  firstMonthlyTotalNet: number;
+  lastMonthlyTotalNet: number;
+  /** Combined monthly net income (investment + pension) from the pension start age. */
+  monthlyTotalIncomeWithPension: number;
   /** Fractional year (from today) the money runs out, or null if it lasts. */
   depletionYear: number | null;
   /** Age the money runs out, or null if it lasts. */
@@ -146,6 +164,8 @@ type RetSim = {
   totalTax: number;
   depletionMonth: number | null;
   yearEndBalances: number[];
+  /** Investment net at the first month of each retirement year. */
+  yearFirstMonthNets: number[];
   firstMonthNet: number;
   firstMonthGross: number;
   lastYearNet: number;
@@ -168,6 +188,7 @@ function simulateRetirement(o: RetSimOpts): RetSim {
   let totalTax = 0;
   let depletionMonth: number | null = null;
   const yearEndBalances: number[] = [];
+  const yearFirstMonthNets: number[] = [];
   let firstMonthNet = 0;
   let firstMonthGross = 0;
   let lastYearNet = 0;
@@ -212,6 +233,7 @@ function simulateRetirement(o: RetSimOpts): RetSim {
     totalTax += tax;
     totalNet += net;
 
+    if (j % 12 === 0) yearFirstMonthNets.push(net);
     if (j === 0) {
       firstMonthNet = net;
       firstMonthGross = gross;
@@ -230,6 +252,7 @@ function simulateRetirement(o: RetSimOpts): RetSim {
     totalTax,
     depletionMonth,
     yearEndBalances,
+    yearFirstMonthNets,
     firstMonthNet,
     firstMonthGross,
     lastYearNet,
@@ -285,6 +308,9 @@ export function normalizeInput(p: Partial<InvestingInput> | null | undefined): I
       annualReturnPct: numOr(src.retirement?.annualReturnPct, 4),
       capitalGainsTaxPct: numOr(src.retirement?.capitalGainsTaxPct, 30),
       usePresumedCost: src.retirement?.usePresumedCost !== false,
+      kansanelake: numOr(src.retirement?.kansanelake, 0),
+      kansanelakeTaxPct: numOr(src.retirement?.kansanelakeTaxPct, 0),
+      kansanelakeStartAge: numOr(src.retirement?.kansanelakeStartAge, 65),
     },
     inflationPct: numOr(src.inflationPct, 0),
   };
@@ -411,6 +437,34 @@ export function calculateProjection(input: InvestingInput): InvestingResult {
   const depletionYear =
     sim.depletionMonth === null ? null : sim.depletionMonth / 12;
 
+  // ---- Kansaneläke (state pension): external income, additive only ----
+  // The entered amount is the monthly net-of-its-own-tax base when the pension
+  // starts; it rises with inflation from there. It never touches the portfolio.
+  const pensionNetAtStart =
+    Math.max(0, num(ret.kansanelake)) *
+    (1 - Math.max(0, num(ret.kansanelakeTaxPct)) / 100);
+  const pensionStartYearIndex = Math.max(
+    0,
+    Math.floor(num(ret.kansanelakeStartAge) - retirementAge)
+  );
+  const pensionNetForYear = (r: number): number =>
+    r >= pensionStartYearIndex
+      ? pensionNetAtStart * Math.pow(1 + inflation, r - pensionStartYearIndex)
+      : 0;
+
+  let totalPensionNet = 0;
+  for (let r = 0; r < retirementYears; r++) totalPensionNet += pensionNetForYear(r) * 12;
+  const pensionFirst = retirementYears > 0 ? pensionNetForYear(0) : 0;
+  const pensionLast =
+    retirementYears > 0 ? pensionNetForYear(retirementYears - 1) : 0;
+  // Combined income at the year the pension starts: investment net there (already
+  // inflation-stepped) plus the pension's starting net.
+  const investNetAtPensionStart =
+    pensionStartYearIndex < sim.yearFirstMonthNets.length
+      ? sim.yearFirstMonthNets[pensionStartYearIndex]
+      : 0;
+  const monthlyTotalIncomeWithPension = investNetAtPensionStart + pensionNetAtStart;
+
   return {
     points,
     currentAge,
@@ -433,6 +487,12 @@ export function calculateProjection(input: InvestingInput): InvestingResult {
     firstMonthlyGross: sim.firstMonthGross,
     lastMonthlyNet: sim.lastYearNet,
     lastMonthlyGross: sim.lastYearGross,
+    pensionStartAge: num(ret.kansanelakeStartAge),
+    pensionNetMonthly: pensionNetAtStart,
+    totalPensionNet,
+    firstMonthlyTotalNet: sim.firstMonthNet + pensionFirst,
+    lastMonthlyTotalNet: sim.lastYearNet + pensionLast,
+    monthlyTotalIncomeWithPension,
     depletionYear,
     depletionAge: depletionYear === null ? null : currentAge + depletionYear,
     realFinalBalance: sim.finalBalance / realFactor(totalYears),

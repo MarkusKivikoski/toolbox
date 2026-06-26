@@ -57,6 +57,13 @@ export function buildInputRows(input: InvestingInput): Cell[][] {
       ["Capital gains tax (%)", r.capitalGainsTaxPct],
       ["Hankintameno-olettama", r.usePresumedCost ? "applied" : "off"]
     );
+    if (r.kansanelake > 0) {
+      rows.push(
+        ["Kansaneläke gross / month (€)", round2(r.kansanelake)],
+        ["Pension tax (%)", r.kansanelakeTaxPct],
+        ["Pension starts at age", r.kansanelakeStartAge]
+      );
+    }
   }
 
   return rows;
@@ -94,6 +101,20 @@ export function buildSummaryRows(
       ["Final balance (€)", round2(result.finalBalance)],
       ["Outcome", outcome]
     );
+    if (input.retirement.kansanelake > 0) {
+      rows.push(
+        [],
+        ["Kansaneläke net / month (€)", round2(result.pensionNetMonthly)],
+        ["Total kansaneläke net (€)", round2(result.totalPensionNet)],
+        ["First-year total income net / month (€)", round2(result.firstMonthlyTotalNet)]
+      );
+      if (input.retirement.kansanelakeStartAge > input.retirementAge) {
+        rows.push([
+          `Total income with pension — from age ${input.retirement.kansanelakeStartAge} / month (€)`,
+          round2(result.monthlyTotalIncomeWithPension),
+        ]);
+      }
+    }
   }
 
   return rows;

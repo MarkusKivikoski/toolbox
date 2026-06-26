@@ -41,6 +41,9 @@ const DEFAULT_INPUT: InvestingInput = {
     annualReturnPct: 5,
     capitalGainsTaxPct: 30,
     usePresumedCost: true,
+    kansanelake: 0,
+    kansanelakeTaxPct: 0,
+    kansanelakeStartAge: 65,
   },
   inflationPct: 0,
 };
@@ -61,6 +64,9 @@ const BLANK_INPUT: InvestingInput = {
     annualReturnPct: 4,
     capitalGainsTaxPct: 30,
     usePresumedCost: true,
+    kansanelake: 0,
+    kansanelakeTaxPct: 0,
+    kansanelakeStartAge: 65,
   },
   inflationPct: 0,
 };
@@ -262,6 +268,14 @@ export default function InvestingCalculator() {
   const lasts = result.depletionYear === null;
   const spendDown = result.withdrawalMode === "spendDown";
   const isNet = result.withdrawalBasis === "net";
+  const hasPension = input.retirement.kansanelake > 0;
+  const pensionActiveAtStart =
+    hasPension && input.retirement.kansanelakeStartAge <= input.retirementAge;
+  // When retiring before the pension starts, show a separate combined-income box.
+  const showTotalIncomeTile =
+    hasPension &&
+    !pensionActiveAtStart &&
+    input.retirement.kansanelakeStartAge < input.lifeExpectancy;
   // depletionYear is measured from today (year 0); convert to "into retirement".
   const depletionIntoRetirement =
     result.depletionYear === null
@@ -536,6 +550,46 @@ export default function InvestingCalculator() {
                     className="mt-0.5 h-5 w-5 flex-shrink-0 accent-emerald-500"
                   />
                 </label>
+
+                <div className="border-t border-zinc-200 pt-4 dark:border-zinc-800">
+                  <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                    Kansaneläke (state pension)
+                  </div>
+                  <p className="mb-3 mt-0.5 text-xs text-zinc-400">
+                    Optional — added on top of your withdrawals as income. Rises
+                    with inflation.
+                  </p>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <NumberField
+                      label="Kansaneläke / month"
+                      value={input.retirement.kansanelake}
+                      onChange={(n) => setRetirement({ kansanelake: n })}
+                      prefix="€"
+                      hint="0 = none"
+                    />
+                    {input.retirement.kansanelake > 0 && (
+                      <>
+                        <NumberField
+                          label="Pension tax"
+                          value={input.retirement.kansanelakeTaxPct}
+                          onChange={(n) =>
+                            setRetirement({ kansanelakeTaxPct: n })
+                          }
+                          suffix="%"
+                        />
+                        <NumberField
+                          label="Pension starts at age"
+                          value={input.retirement.kansanelakeStartAge}
+                          onChange={(n) =>
+                            setRetirement({
+                              kansanelakeStartAge: Math.round(n),
+                            })
+                          }
+                        />
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -642,17 +696,37 @@ export default function InvestingCalculator() {
               )}
             </p>
 
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div
+              className={`mt-4 grid grid-cols-1 gap-3 ${
+                showTotalIncomeTile ? "sm:grid-cols-2" : "sm:grid-cols-3"
+              }`}
+            >
               <StatTile
                 label="Monthly income (net)"
-                value={`≈ ${formatEur(result.firstMonthlyNet)}`}
+                value={`≈ ${formatEur(
+                  hasPension ? result.firstMonthlyTotalNet : result.firstMonthlyNet
+                )}`}
                 accent="emerald"
                 sub={
-                  input.inflationPct > 0
-                    ? `→ ${formatEur(result.lastMonthlyNet)} at age ${result.lifeExpectancy}`
-                    : "after tax"
+                  hasPension
+                    ? pensionActiveAtStart
+                      ? `${formatEur(result.firstMonthlyNet)} invest + ${formatEur(result.pensionNetMonthly)} pension`
+                      : `${formatEur(result.firstMonthlyNet)} invest · +${formatEur(result.pensionNetMonthly)} pension from age ${result.pensionStartAge}`
+                    : input.inflationPct > 0
+                      ? `→ ${formatEur(result.lastMonthlyNet)} at age ${result.lifeExpectancy}`
+                      : "after tax"
                 }
               />
+              {showTotalIncomeTile && (
+                <StatTile
+                  label="Total income (with pension)"
+                  value={`≈ ${formatEur(result.monthlyTotalIncomeWithPension)}`}
+                  accent="emerald"
+                  sub={`from age ${result.pensionStartAge} · ${formatEur(
+                    result.monthlyTotalIncomeWithPension - result.pensionNetMonthly
+                  )} invest + ${formatEur(result.pensionNetMonthly)} pension`}
+                />
+              )}
               <StatTile
                 label="Capital gains tax"
                 value={formatEur(result.totalTax)}

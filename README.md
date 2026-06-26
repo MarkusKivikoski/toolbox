@@ -9,7 +9,7 @@ A small collection of focused, self-contained web tools — built with Next.js (
 
 | Tool | Description |
 | ---- | ----------- |
-| 📈 [Investing Calculator](/tools/investing-calculator) | Project a portfolio with variable monthly contributions (phases) on an age-based timeline, then model living off it in retirement — fixed withdrawal or a "spend it all" mode that solves for the most you can draw (rising with inflation) so the pot empties at life expectancy. Models Finnish capital-gains tax (30% default, with hankintameno-olettama) on the realised gain, with a net/gross switch. Inflation-adjusted view, a responsive touch-friendly chart, and named scenarios you can save (e.g. "Child's fund"). |
+| 📈 [Investing Calculator](/tools/investing-calculator) | Project a portfolio with variable monthly contributions (phases) on an age-based timeline, then model living off it in retirement — fixed withdrawal or a "spend it all" mode that solves for the most you can draw (rising with inflation) so the pot empties at life expectancy. Models Finnish capital-gains tax (30% default, with hankintameno-olettama) on the realised gain, with a net/gross switch, plus an optional **kansaneläke** (state pension) added to monthly income. Inflation-adjusted view, a responsive touch-friendly chart, named scenarios you can save (e.g. "Child's fund"), and **export to Excel (.xlsx) / CSV**. |
 
 All state is client-side (localStorage) — no backend, no accounts.
 
