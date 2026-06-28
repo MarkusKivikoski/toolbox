@@ -18,4 +18,13 @@ export const tools: Tool[] = [
     href: "/tools/investing-calculator",
     status: "live",
   },
+  {
+    slug: "darts-score",
+    name: "Darts Score Tracker",
+    description:
+      "Track X01 darts games — pick players, enforce official out-rules, and get checkout suggestions.",
+    emoji: "🎯",
+    href: "/tools/darts-score",
+    status: "live",
+  },
 ];
