@@ -27,4 +27,13 @@ export const tools: Tool[] = [
     href: "/tools/darts-score",
     status: "live",
   },
+  {
+    slug: "cost-of-living",
+    name: "Cost of Living Calculator",
+    description:
+      "Enter a Finnish salary and a year, then see what that money was really worth in any other year since 1860.",
+    emoji: "💶",
+    href: "/tools/cost-of-living",
+    status: "live",
+  },
 ];

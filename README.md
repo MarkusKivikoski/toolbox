@@ -10,6 +10,7 @@ A small collection of focused, self-contained web tools — built with Next.js (
 | Tool | Description |
 | ---- | ----------- |
 | 📈 [Investing Calculator](/tools/investing-calculator) | Project a portfolio with variable monthly contributions (phases) on an age-based timeline, then model living off it in retirement — fixed withdrawal or a "spend it all" mode that solves for the most you can draw (rising with inflation) so the pot empties at life expectancy. Models Finnish capital-gains tax (30% default, with hankintameno-olettama) on the realised gain, with a net/gross switch, plus an optional **kansaneläke** (state pension) added to monthly income. Inflation-adjusted view, a responsive touch-friendly chart, named scenarios you can save (e.g. "Child's fund"), and **export to Excel (.xlsx) / CSV**. |
+| 💶 [Cost of Living Calculator](/tools/cost-of-living) | See what a Finnish salary was really worth in any year. Enter a net or gross figure and its year, pick another year, and it converts the buying power using **Statistics Finland's cost-of-living index** (1914:1–6 = 100, annual averages **1860–present**) — the same series behind the official money-value converter, spanning the 1963 currency reform and the 2002 euro changeover. Shows the equivalent in euros, the **markka** amount Finns actually paid (5.94573 mk/€), cumulative and average annual inflation, and a chart of equal buying power across the years. |
 
 All state is client-side (localStorage) — no backend, no accounts.
 
