@@ -12,7 +12,7 @@ The goal is simplicity: each tool does one thing well, lives at its own URL, and
 |---|---|---|
 | `investing-calculator` | Investing Calculator | Portfolio growth projection with variable contribution phases and retirement drawdown modelling |
 | `darts-score` | Darts Score Tracker | X01 darts scorekeeping — per-dart entry, official out-rules, bust logic, checkout suggestions, legs/sets formats |
-| `cost-of-living` | Cost of Living Calculator | Finnish purchasing-power converter — adjusts a net/gross salary between any two years (1860–present) using Statistics Finland's cost-of-living index, with markka equivalents |
+| `cost-of-living` | Cost of Living Calculator | Finnish salary-history comparison — enter pay for two years (1860–present) and see the inflation-parity target ("should now be X") and the real buying-power change, via Statistics Finland's cost-of-living index |
 
 ## Architecture conventions
 

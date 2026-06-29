@@ -5,7 +5,7 @@ import CostOfLiving from "./CostOfLiving";
 export const metadata: Metadata = {
   title: "Cost of Living Calculator",
   description:
-    "See what a Finnish salary was worth in any year since 1860, adjusted with Statistics Finland's cost-of-living index.",
+    "Compare a Finnish salary across two years and see whether your pay kept up with inflation, using Statistics Finland's cost-of-living index.",
 };
 
 export default function CostOfLivingPage() {
@@ -24,9 +24,9 @@ export default function CostOfLivingPage() {
           💶 Cost of Living Calculator
         </h1>
         <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-          Enter a net or gross salary and a year, then pick another year to see
-          what that money was really worth — Finnish purchasing power adjusted for
-          inflation back to 1860.
+          Enter what you earned in two different years and see whether your pay
+          kept up — what your salary should be today to match, and how much your
+          buying power has risen or fallen. Finnish data back to 1860.
         </p>
       </header>
 

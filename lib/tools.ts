@@ -31,7 +31,7 @@ export const tools: Tool[] = [
     slug: "cost-of-living",
     name: "Cost of Living Calculator",
     description:
-      "Enter a Finnish salary and a year, then see what that money was really worth in any other year since 1860.",
+      "Compare a Finnish salary across two years — see if your pay kept up with inflation and what it should be today.",
     emoji: "💶",
     href: "/tools/cost-of-living",
     status: "live",

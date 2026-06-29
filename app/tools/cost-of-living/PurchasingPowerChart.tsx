@@ -5,9 +5,12 @@ import { convert } from "@/lib/cost-of-living";
 import { compactEur, formatEur } from "@/lib/format";
 
 type Props = {
-  amount: number;
-  fromYear: number;
-  toYear: number;
+  /** Salary at the baseline (earlier) year — anchors the parity line. */
+  baselineSalary: number;
+  baselineYear: number;
+  nowYear: number;
+  /** Actual later-year salary, plotted against the parity line. Omit to hide it. */
+  actualNow?: number;
 };
 
 function niceCeil(value: number): number {
@@ -19,10 +22,15 @@ function niceCeil(value: number): number {
 }
 
 /**
- * The euro figure you'd need each year to match the entered salary's buying power,
- * traced across the span between the two selected years.
+ * The euro figure you'd need each year to keep the baseline salary's buying power
+ * (the parity line), with the actual later-year salary marked against it.
  */
-export default function PurchasingPowerChart({ amount, fromYear, toYear }: Props) {
+export default function PurchasingPowerChart({
+  baselineSalary,
+  baselineYear,
+  nowYear,
+  actualNow,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [width, setWidth] = useState(0);
@@ -39,9 +47,9 @@ export default function PurchasingPowerChart({ amount, fromYear, toYear }: Props
     return () => ro.disconnect();
   }, []);
 
-  const earlier = Math.min(fromYear, toYear);
-  const later = Math.max(fromYear, toYear);
-  const span = later - earlier;
+  const earlier = Math.min(baselineYear, nowYear);
+  const later = Math.max(baselineYear, nowYear);
+  const span = Math.max(1, later - earlier);
 
   const compact = width > 0 && width < 480;
   const height = compact ? 200 : 240;
@@ -52,9 +60,12 @@ export default function PurchasingPowerChart({ amount, fromYear, toYear }: Props
 
   const years: number[] = [];
   for (let y = earlier; y <= later; y++) years.push(y);
-  const valueOf = (year: number) => convert(amount, fromYear, year);
+  const valueOf = (year: number) => convert(baselineSalary, baselineYear, year);
 
-  const rawMax = Math.max(1, ...years.map(valueOf));
+  const target = valueOf(nowYear);
+  const actualBelow = actualNow !== undefined && actualNow < target;
+
+  const rawMax = Math.max(1, ...years.map(valueOf), actualNow ?? 0);
   const maxY = niceCeil(rawMax);
 
   const xOf = (year: number) => PAD.left + ((year - earlier) / span) * plotW;
@@ -108,7 +119,7 @@ export default function PurchasingPowerChart({ amount, fromYear, toYear }: Props
           viewBox={`0 0 ${width} ${height}`}
           className="block touch-pan-y select-none"
           role="img"
-          aria-label="Equal buying power across the years"
+          aria-label="Salary buying power across the years"
           onPointerDown={(e) => pointerToIndex(e.clientX)}
           onPointerMove={(e) => {
             if (e.pointerType === "mouse" || e.buttons > 0 || e.pressure > 0)
@@ -167,8 +178,8 @@ export default function PurchasingPowerChart({ amount, fromYear, toYear }: Props
             strokeLinejoin="round"
           />
 
-          {/* The two selected years. */}
-          {[fromYear, toYear].map((y, i) => (
+          {/* Baseline salary and the parity target on the line. */}
+          {[baselineYear, nowYear].map((y, i) => (
             <circle
               key={`dot-${i}`}
               cx={xOf(y)}
@@ -178,6 +189,32 @@ export default function PurchasingPowerChart({ amount, fromYear, toYear }: Props
               strokeWidth={1.5}
             />
           ))}
+
+          {/* Actual later-year salary, with a dashed connector showing the gap. */}
+          {actualNow !== undefined && (
+            <g>
+              <line
+                x1={xOf(nowYear)}
+                y1={yOf(target)}
+                x2={xOf(nowYear)}
+                y2={yOf(actualNow)}
+                className={
+                  actualBelow ? "stroke-amber-500" : "stroke-emerald-600"
+                }
+                strokeWidth={1.5}
+                strokeDasharray="3 3"
+              />
+              <circle
+                cx={xOf(nowYear)}
+                cy={yOf(actualNow)}
+                r={4.5}
+                className={`${
+                  actualBelow ? "fill-amber-500" : "fill-emerald-600"
+                } stroke-white dark:stroke-zinc-900`}
+                strokeWidth={1.5}
+              />
+            </g>
+          )}
 
           {/* Hover / touch marker. */}
           {activeYear !== null && (
@@ -202,7 +239,7 @@ export default function PurchasingPowerChart({ amount, fromYear, toYear }: Props
         </svg>
       )}
 
-      <div className="mt-1 flex min-h-[1.25rem] flex-wrap items-center justify-center gap-x-4 gap-y-1 px-1 text-xs text-zinc-500 dark:text-zinc-400">
+      <div className="mt-1 flex min-h-[1.25rem] flex-wrap items-center justify-center gap-x-3 gap-y-1 px-1 text-xs text-zinc-500 dark:text-zinc-400">
         {activeYear !== null ? (
           <span>
             In{" "}
@@ -217,17 +254,20 @@ export default function PurchasingPowerChart({ amount, fromYear, toYear }: Props
           </span>
         ) : (
           <>
-            <span>
-              <span className="font-medium text-zinc-700 dark:text-zinc-200">{fromYear}</span>{" "}
-              {formatEur(valueOf(fromYear))}
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-0 w-4 border-t-2 border-emerald-500" />
+              parity (needs {formatEur(target)} in {nowYear})
             </span>
-            <span className="text-zinc-300 dark:text-zinc-600">·</span>
-            <span>
-              <span className="font-medium text-zinc-700 dark:text-zinc-200">{toYear}</span>{" "}
-              {formatEur(valueOf(toYear))}
-            </span>
-            <span className="hidden text-zinc-300 dark:text-zinc-600 sm:inline">·</span>
-            <span className="hidden sm:inline">tap the chart for any year</span>
+            {actualNow !== undefined && (
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${
+                    actualBelow ? "bg-amber-500" : "bg-emerald-600"
+                  }`}
+                />
+                your actual {formatEur(actualNow)}
+              </span>
+            )}
           </>
         )}
       </div>
