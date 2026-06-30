@@ -36,4 +36,13 @@ export const tools: Tool[] = [
     href: "/tools/cost-of-living",
     status: "live",
   },
+  {
+    slug: "budget-visualizer",
+    name: "Budget Visualizer",
+    description:
+      "Split your monthly income into spending sections and see the breakdown as a doughnut, with what's left to budget in the middle.",
+    emoji: "🍩",
+    href: "/tools/budget-visualizer",
+    status: "live",
+  },
 ];

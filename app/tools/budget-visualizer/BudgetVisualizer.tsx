@@ -1,0 +1,449 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  computeBudget,
+  colorForIndex,
+  normalizeState,
+  parseAmount,
+  type BudgetRow,
+  type BudgetState,
+} from "@/lib/budget";
+import { formatEur } from "@/lib/format";
+import BudgetDoughnut from "./BudgetDoughnut";
+
+const STORAGE_KEY = "toolbox.budget-visualizer.state.v1";
+
+let rowSeq = 0;
+const newRowId = () => `row-${++rowSeq}-${Date.now()}`;
+
+/** Uppercase just the first character, leaving the rest as typed. */
+const capitalizeFirst = (s: string) =>
+  s.length === 0 ? s : s[0].toUpperCase() + s.slice(1);
+
+const DEFAULT_STATE: BudgetState = {
+  incomes: [
+    { id: "income-salary", name: "Salary", amount: "2800" },
+    { id: "income-side", name: "Side projects", amount: "400" },
+  ],
+  sections: [
+    { id: "section-rent", name: "Rent", amount: "950" },
+    { id: "section-groceries", name: "Groceries", amount: "450" },
+    { id: "section-transport", name: "Transport", amount: "160" },
+    { id: "section-utilities", name: "Utilities", amount: "130" },
+    { id: "section-subscriptions", name: "Subscriptions", amount: "60" },
+    { id: "section-savings", name: "Savings", amount: "500" },
+    { id: "section-funmoney", name: "Eating out & fun", amount: "200" },
+  ],
+};
+
+const blankState = (): BudgetState => ({
+  incomes: [{ id: newRowId(), name: "", amount: "" }],
+  sections: [{ id: newRowId(), name: "", amount: "" }],
+});
+
+const pctFmt = new Intl.NumberFormat("en", {
+  style: "percent",
+  maximumFractionDigits: 0,
+});
+
+/** Shared editable line: name + euro amount + remove, with an optional colour dot. */
+function RowEditor({
+  row,
+  ariaPrefix,
+  namePlaceholder,
+  fallbackNoun,
+  dotColor,
+  showDot,
+  autoFocus,
+  onAutoFocused,
+  onName,
+  onAmount,
+  onRemove,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  row: BudgetRow;
+  ariaPrefix: string;
+  namePlaceholder: string;
+  fallbackNoun: string;
+  dotColor?: string;
+  showDot: boolean;
+  /** Focus the name input on mount — set for a freshly added row. */
+  autoFocus: boolean;
+  onAutoFocused: () => void;
+  onName: (v: string) => void;
+  onAmount: (v: string) => void;
+  onRemove: () => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+}) {
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!autoFocus) return;
+    nameRef.current?.focus();
+    onAutoFocused();
+  }, [autoFocus, onAutoFocused]);
+
+  return (
+    <div
+      className="grid grid-cols-[1fr_6.5rem_2.25rem] items-center gap-2"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      <div className="flex items-center rounded-xl border border-zinc-300 bg-white px-2.5 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-950">
+        {showDot && (
+          <span
+            className="mr-2 h-3 w-3 shrink-0 rounded-full bg-zinc-200 dark:bg-zinc-700"
+            style={{ backgroundColor: dotColor }}
+            aria-hidden
+          />
+        )}
+        <input
+          ref={nameRef}
+          type="text"
+          value={row.name}
+          onChange={(e) => onName(capitalizeFirst(e.target.value))}
+          placeholder={namePlaceholder}
+          aria-label={`${ariaPrefix} name`}
+          className="w-full min-w-0 bg-transparent py-2.5 text-sm font-medium outline-none placeholder:text-zinc-300 dark:placeholder:text-zinc-600"
+        />
+      </div>
+      <div className="flex items-center rounded-xl border border-zinc-300 bg-white px-2.5 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-950">
+        <span className="text-sm font-semibold text-zinc-400">€</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={row.amount}
+          onChange={(e) => onAmount(e.target.value)}
+          placeholder="0"
+          aria-label={`${ariaPrefix} amount`}
+          className="w-full min-w-0 bg-transparent py-2.5 pl-1 text-sm font-semibold tabular-nums outline-none placeholder:text-zinc-300 dark:placeholder:text-zinc-600"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove ${row.name.trim() || fallbackNoun}`}
+        className="flex h-9 w-9 items-center justify-center rounded-xl border border-zinc-200 text-zinc-400 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 dark:border-zinc-700 dark:hover:border-rose-800 dark:hover:bg-rose-950/40"
+      >
+        <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden>
+          <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+/** Dashed full-width "add another row" button. */
+function AddButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-zinc-300 px-4 py-2.5 text-sm font-medium text-zinc-600 transition-colors hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-emerald-700 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-400"
+    >
+      <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden>
+        <path d="M10 4.75a.75.75 0 0 1 .75.75v3.75h3.75a.75.75 0 0 1 0 1.5h-3.75v3.75a.75.75 0 0 1-1.5 0v-3.75H5.5a.75.75 0 0 1 0-1.5h3.75V5.5a.75.75 0 0 1 .75-.75Z" />
+      </svg>
+      {label}
+    </button>
+  );
+}
+
+type RowField = "incomes" | "sections";
+
+export default function BudgetVisualizer() {
+  const [state, setState] = useState<BudgetState>(DEFAULT_STATE);
+  const [hydrated, setHydrated] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [focusRowId, setFocusRowId] = useState<string | null>(null);
+  const clearFocusRow = useCallback(() => setFocusRowId(null), []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) setState(normalizeState(JSON.parse(raw), DEFAULT_STATE));
+    } catch {
+      /* ignore */
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      /* ignore */
+    }
+  }, [state, hydrated]);
+
+  // Auto-cancel the reset confirmation if it isn't taken.
+  useEffect(() => {
+    if (!confirmReset) return;
+    const t = window.setTimeout(() => setConfirmReset(false), 3000);
+    return () => window.clearTimeout(t);
+  }, [confirmReset]);
+
+  const { incomes, sections } = state;
+  const summary = useMemo(
+    () => computeBudget(incomes, sections),
+    [incomes, sections],
+  );
+
+  const updateRow = (field: RowField, id: string, patch: Partial<BudgetRow>) =>
+    setState((s) => ({
+      ...s,
+      [field]: s[field].map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    }));
+
+  const addRow = (field: RowField) => {
+    const id = newRowId();
+    setState((s) => ({
+      ...s,
+      [field]: [...s[field], { id, name: "", amount: "" }],
+    }));
+    setFocusRowId(id); // focus the new row's name input once it renders
+  };
+
+  const removeRow = (field: RowField, id: string) => {
+    setActiveId((a) => (a === id ? null : a));
+    setState((s) => ({
+      ...s,
+      [field]: s[field].filter((r) => r.id !== id),
+    }));
+  };
+
+  const handleReset = () => {
+    if (!confirmReset) {
+      setConfirmReset(true);
+      return;
+    }
+    setConfirmReset(false);
+    setActiveId(null);
+    setState(blankState());
+  };
+
+  if (!hydrated) {
+    return <div className="text-sm text-zinc-500">Loading…</div>;
+  }
+
+  const { remaining, allocated, overBudget, slices, income } = summary;
+
+  const statusPill = (() => {
+    if (income <= 0) {
+      return {
+        tone: "border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400",
+        text: "Add your monthly income to see what's left",
+      };
+    }
+    if (overBudget) {
+      return {
+        tone: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-400",
+        text: `${formatEur(-remaining)} over budget`,
+      };
+    }
+    if (remaining < 0.005) {
+      return {
+        tone: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400",
+        text: "Every euro allocated 🎉",
+      };
+    }
+    return {
+      tone: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400",
+      text: `${formatEur(remaining)} left to budget`,
+    };
+  })();
+
+  return (
+    <div className="space-y-5">
+      {/* Form: income sources + sections */}
+      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:p-6">
+        {/* Income sources */}
+        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          Monthly income
+        </span>
+        <div className="mt-2 space-y-2">
+          {incomes.length === 0 && (
+            <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-5 text-center text-sm text-zinc-400 dark:border-zinc-700">
+              No income sources yet — add one to start.
+            </p>
+          )}
+          {incomes.map((row, i) => (
+            <RowEditor
+              key={row.id}
+              row={row}
+              ariaPrefix={`Income ${i + 1}`}
+              namePlaceholder="Income source"
+              fallbackNoun="income source"
+              showDot={false}
+              autoFocus={row.id === focusRowId}
+              onAutoFocused={clearFocusRow}
+              onName={(v) => updateRow("incomes", row.id, { name: v })}
+              onAmount={(v) => updateRow("incomes", row.id, { amount: v })}
+              onRemove={() => removeRow("incomes", row.id)}
+            />
+          ))}
+        </div>
+        <AddButton label="Add income source" onClick={() => addRow("incomes")} />
+        {incomes.length > 1 && (
+          <div className="mt-2 flex items-center justify-end gap-2 px-1 text-sm">
+            <span className="text-zinc-500">Total income</span>
+            <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+              {formatEur(income)}
+            </span>
+          </div>
+        )}
+
+        {/* Sections */}
+        <div className="mt-5 border-t border-zinc-100 pt-5 dark:border-zinc-800">
+          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Budget sections
+          </span>
+          <div className="mt-2 space-y-2">
+            {sections.length === 0 && (
+              <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-5 text-center text-sm text-zinc-400 dark:border-zinc-700">
+                No sections yet — add one to start splitting up your budget.
+              </p>
+            )}
+            {sections.map((row, i) => {
+              const amount = parseAmount(row.amount);
+              return (
+                <RowEditor
+                  key={row.id}
+                  row={row}
+                  ariaPrefix={`Section ${i + 1}`}
+                  namePlaceholder="Section name"
+                  fallbackNoun="section"
+                  showDot
+                  dotColor={amount > 0 ? colorForIndex(i) : undefined}
+                  autoFocus={row.id === focusRowId}
+                  onAutoFocused={clearFocusRow}
+                  onName={(v) => updateRow("sections", row.id, { name: v })}
+                  onAmount={(v) => updateRow("sections", row.id, { amount: v })}
+                  onRemove={() => removeRow("sections", row.id)}
+                  onMouseEnter={() => (amount > 0 ? setActiveId(row.id) : undefined)}
+                  onMouseLeave={() => setActiveId(null)}
+                />
+              );
+            })}
+          </div>
+          <AddButton label="Add section" onClick={() => addRow("sections")} />
+        </div>
+
+        {/* Reset */}
+        <div className="mt-5 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={handleReset}
+            className={`flex w-full items-center justify-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors ${
+              confirmReset
+                ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-400"
+                : "border-zinc-200 text-zinc-500 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/50"
+            }`}
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden>
+              <path
+                fillRule="evenodd"
+                d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0V5.36l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219Z"
+                clipRule="evenodd"
+              />
+            </svg>
+            {confirmReset ? "Tap again to clear everything" : "Reset form"}
+          </button>
+        </div>
+      </div>
+
+      {/* Visualization: doughnut + legend */}
+      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 sm:p-6">
+        <BudgetDoughnut
+          slices={slices}
+          allocated={allocated}
+          overBudget={overBudget}
+          activeId={activeId}
+          onActiveChange={setActiveId}
+        />
+
+        <div
+          className={`mx-auto mt-4 max-w-xs rounded-xl border px-4 py-2.5 text-center text-sm font-medium ${statusPill.tone}`}
+        >
+          {statusPill.text}
+        </div>
+
+        {slices.length === 0 ? (
+          <p className="mt-4 text-center text-sm text-zinc-400">
+            Add a section amount to fill in the doughnut.
+          </p>
+        ) : (
+          <ul className="mt-4 space-y-1">
+            {slices.map((slice) => {
+              const isActive = slice.id === activeId;
+              return (
+                <li
+                  key={slice.id}
+                  onMouseEnter={() => setActiveId(slice.id)}
+                  onMouseLeave={() => setActiveId(null)}
+                  className={`flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors ${
+                    isActive ? "bg-zinc-100 dark:bg-zinc-800" : ""
+                  }`}
+                >
+                  <span
+                    className={`h-3 w-3 shrink-0 rounded-full ${
+                      slice.isRemainder ? "bg-zinc-200 dark:bg-zinc-700" : ""
+                    }`}
+                    style={{ backgroundColor: slice.color ?? undefined }}
+                    aria-hidden
+                  />
+                  <span
+                    className={`min-w-0 flex-1 truncate text-sm ${
+                      slice.isRemainder
+                        ? "text-zinc-500 dark:text-zinc-400"
+                        : "text-zinc-700 dark:text-zinc-200"
+                    }`}
+                  >
+                    {slice.name}
+                  </span>
+                  <span className="shrink-0 text-xs tabular-nums text-zinc-400">
+                    {pctFmt.format(slice.fraction)}
+                  </span>
+                  <span className="w-20 shrink-0 text-right text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+                    {formatEur(slice.amount)}
+                  </span>
+                </li>
+              );
+            })}
+
+            {/* Allocated total footer */}
+            <li className="mt-1 flex items-center gap-3 border-t border-zinc-100 px-2 pt-2 dark:border-zinc-800">
+              <span className="h-3 w-3 shrink-0" aria-hidden />
+              <span className="min-w-0 flex-1 text-sm font-medium text-zinc-500">
+                Allocated
+              </span>
+              <span className="shrink-0 text-xs tabular-nums text-zinc-400">
+                {income > 0 ? pctFmt.format(allocated / income) : ""}
+              </span>
+              <span className="w-20 shrink-0 text-right text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+                {formatEur(allocated)}
+              </span>
+            </li>
+          </ul>
+        )}
+      </div>
+
+      <p className="px-1 text-xs leading-relaxed text-zinc-400">
+        Everything stays in your browser — nothing is uploaded. Add as many
+        income sources and sections as you like; the doughnut and totals update
+        as you type.
+      </p>
+    </div>
+  );
+}
