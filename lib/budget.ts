@@ -78,6 +78,7 @@ export function parseAmount(s: string): number {
 export function computeBudget(
   incomes: BudgetRow[],
   sections: BudgetRow[],
+  remainderLabel = "Left to budget",
 ): BudgetSummary {
   const income = incomes.reduce((sum, i) => sum + parseAmount(i.amount), 0);
 
@@ -107,7 +108,7 @@ export function computeBudget(
   if (remaining > 0.005) {
     slices.push({
       id: REMAINDER_ID,
-      name: "Left to budget",
+      name: remainderLabel,
       amount: remaining,
       fraction: total > 0 ? remaining / total : 0,
       color: null,
@@ -116,6 +117,47 @@ export function computeBudget(
   }
 
   return { income, allocated, remaining, total, overBudget, slices };
+}
+
+/** Optional savings goal. The monthly contribution is the unallocated leftover. */
+export type SavingsState = {
+  enabled: boolean;
+  /** Current balance you've already saved. */
+  balance: string;
+  /** The amount you're saving toward. */
+  target: string;
+};
+
+export type SavingsProjection = {
+  /** Monthly contribution — the unallocated money, clamped at zero. */
+  monthly: number;
+  balance: number;
+  target: number;
+  /** balance / target, clamped to 0–1. */
+  progress: number;
+  reached: boolean;
+  /** Whole months to reach the target at this rate; null if unreachable. */
+  monthsToTarget: number | null;
+};
+
+/**
+ * Project a savings goal from the monthly leftover. With no money left over (or
+ * no target set) the target is unreachable, so `monthsToTarget` is null.
+ */
+export function computeSavings(
+  monthlyLeftover: number,
+  balanceStr: string,
+  targetStr: string,
+): SavingsProjection {
+  const balance = parseAmount(balanceStr);
+  const target = parseAmount(targetStr);
+  const monthly = monthlyLeftover > 0 ? monthlyLeftover : 0;
+  const reached = target > 0 && balance >= target;
+  const toGo = Math.max(0, target - balance);
+  const monthsToTarget =
+    !reached && monthly > 0 && target > 0 ? Math.ceil(toGo / monthly) : null;
+  const progress = target > 0 ? Math.min(1, balance / target) : 0;
+  return { monthly, balance, target, progress, reached, monthsToTarget };
 }
 
 /** Backfill a stored row so older saves don't crash on load. */
@@ -128,9 +170,20 @@ function normalizeRow(s: unknown, i: number): BudgetRow {
   };
 }
 
+/** Backfill savings; defaults to off so existing saves aren't surprised. */
+function normalizeSavings(s: unknown): SavingsState {
+  const o = (s ?? {}) as Partial<SavingsState>;
+  return {
+    enabled: typeof o.enabled === "boolean" ? o.enabled : false,
+    balance: typeof o.balance === "string" ? o.balance : "",
+    target: typeof o.target === "string" ? o.target : "",
+  };
+}
+
 export type BudgetState = {
   incomes: BudgetRow[];
   sections: BudgetRow[];
+  savings: SavingsState;
 };
 
 export function normalizeState(s: unknown, fallback: BudgetState): BudgetState {
@@ -146,5 +199,6 @@ export function normalizeState(s: unknown, fallback: BudgetState): BudgetState {
     sections: Array.isArray(o.sections)
       ? o.sections.map(normalizeRow)
       : fallback.sections,
+    savings: normalizeSavings(o.savings),
   };
 }

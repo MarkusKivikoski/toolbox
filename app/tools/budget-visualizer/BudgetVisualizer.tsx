@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   computeBudget,
+  computeSavings,
   colorForIndex,
   normalizeState,
   parseAmount,
   type BudgetRow,
   type BudgetState,
+  type SavingsState,
 } from "@/lib/budget";
-import { formatEur } from "@/lib/format";
+import { formatDuration, formatEur } from "@/lib/format";
 import BudgetDoughnut from "./BudgetDoughnut";
 
 const STORAGE_KEY = "toolbox.budget-visualizer.state.v1";
@@ -32,20 +34,29 @@ const DEFAULT_STATE: BudgetState = {
     { id: "section-transport", name: "Transport", amount: "160" },
     { id: "section-utilities", name: "Utilities", amount: "130" },
     { id: "section-subscriptions", name: "Subscriptions", amount: "60" },
-    { id: "section-savings", name: "Savings", amount: "500" },
     { id: "section-funmoney", name: "Eating out & fun", amount: "200" },
   ],
+  savings: { enabled: true, balance: "2000", target: "15000" },
 };
 
 const blankState = (): BudgetState => ({
   incomes: [{ id: newRowId(), name: "", amount: "" }],
   sections: [{ id: newRowId(), name: "", amount: "" }],
+  savings: { enabled: false, balance: "", target: "" },
 });
 
 const pctFmt = new Intl.NumberFormat("en", {
   style: "percent",
   maximumFractionDigits: 0,
 });
+
+/** A "Mon YYYY" label for a date this many whole months from today. */
+const dateInMonths = (months: number) => {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + months);
+  return d.toLocaleDateString("en", { month: "short", year: "numeric" });
+};
 
 /** Shared editable line: name + euro amount + remove, with an optional colour dot. */
 function RowEditor({
@@ -158,6 +169,39 @@ function AddButton({
   );
 }
 
+/** A small labelled euro input, used for the savings balance and target. */
+function EuroField({
+  label,
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-zinc-500">
+        {label}
+      </span>
+      <div className="flex items-center rounded-xl border border-zinc-300 bg-white px-2.5 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-950">
+        <span className="text-sm font-semibold text-zinc-400">€</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="0"
+          aria-label={ariaLabel}
+          className="w-full min-w-0 bg-transparent py-2.5 pl-1 text-sm font-semibold tabular-nums outline-none placeholder:text-zinc-300 dark:placeholder:text-zinc-600"
+        />
+      </div>
+    </label>
+  );
+}
+
 type RowField = "incomes" | "sections";
 
 export default function BudgetVisualizer() {
@@ -194,11 +238,23 @@ export default function BudgetVisualizer() {
     return () => window.clearTimeout(t);
   }, [confirmReset]);
 
-  const { incomes, sections } = state;
+  const { incomes, sections, savings } = state;
   const summary = useMemo(
-    () => computeBudget(incomes, sections),
-    [incomes, sections],
+    () =>
+      computeBudget(
+        incomes,
+        sections,
+        savings.enabled ? "To savings" : "Left to budget",
+      ),
+    [incomes, sections, savings.enabled],
   );
+  const projection = useMemo(
+    () => computeSavings(summary.remaining, savings.balance, savings.target),
+    [summary.remaining, savings.balance, savings.target],
+  );
+
+  const updateSavings = (patch: Partial<SavingsState>) =>
+    setState((s) => ({ ...s, savings: { ...s.savings, ...patch } }));
 
   const updateRow = (field: RowField, id: string, patch: Partial<BudgetRow>) =>
     setState((s) => ({
@@ -260,7 +316,9 @@ export default function BudgetVisualizer() {
     }
     return {
       tone: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400",
-      text: `${formatEur(remaining)} left to budget`,
+      text: savings.enabled
+        ? `${formatEur(remaining)} going to savings`
+        : `${formatEur(remaining)} left to budget`,
     };
   })();
 
@@ -338,6 +396,38 @@ export default function BudgetVisualizer() {
             })}
           </div>
           <AddButton label="Add section" onClick={() => addRow("sections")} />
+        </div>
+
+        {/* Optional savings goal */}
+        <div className="mt-5 border-t border-zinc-100 pt-5 dark:border-zinc-800">
+          <label className="flex cursor-pointer select-none items-center gap-2.5">
+            <input
+              type="checkbox"
+              checked={savings.enabled}
+              onChange={(e) => updateSavings({ enabled: e.target.checked })}
+              className="h-4 w-4 shrink-0 rounded border-zinc-300 accent-emerald-600 dark:border-zinc-600"
+            />
+            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              Track savings toward a goal
+            </span>
+          </label>
+
+          {savings.enabled && (
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:gap-3">
+              <EuroField
+                label="Current savings"
+                value={savings.balance}
+                onChange={(v) => updateSavings({ balance: v })}
+                ariaLabel="Current savings"
+              />
+              <EuroField
+                label="Savings target"
+                value={savings.target}
+                onChange={(v) => updateSavings({ target: v })}
+                ariaLabel="Savings target"
+              />
+            </div>
+          )}
         </div>
 
         {/* Reset */}
@@ -436,6 +526,86 @@ export default function BudgetVisualizer() {
               </span>
             </li>
           </ul>
+        )}
+
+        {/* Savings projection */}
+        {savings.enabled && (
+          <div className="mt-5 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                  Saving each month
+                </div>
+                <div className="mt-0.5 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                  {formatEur(projection.monthly)}
+                  <span className="text-base font-medium text-zinc-400"> /mo</span>
+                </div>
+                <div className="text-xs text-zinc-400">
+                  from your unallocated budget
+                </div>
+              </div>
+              {projection.target > 0 && (
+                <div className="text-right">
+                  <div className="text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+                    {formatEur(projection.balance)}{" "}
+                    <span className="font-normal text-zinc-400">
+                      of {formatEur(projection.target)}
+                    </span>
+                  </div>
+                  <div className="text-xs text-zinc-400">
+                    {pctFmt.format(projection.progress)} saved
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {projection.target > 0 && (
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                <div
+                  className="h-full rounded-full bg-emerald-500 transition-all"
+                  style={{
+                    width: `${Math.max(
+                      projection.progress * 100,
+                      projection.progress > 0 ? 2 : 0,
+                    )}%`,
+                  }}
+                />
+              </div>
+            )}
+
+            <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50/60 px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-950/40">
+              {projection.reached ? (
+                <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                  🎉 You&apos;ve reached your savings target!
+                </span>
+              ) : projection.target <= 0 ? (
+                <span className="text-zinc-500">
+                  Set a target to see how long it&apos;ll take to get there.
+                </span>
+              ) : projection.monthsToTarget === null ? (
+                <span className="text-amber-700 dark:text-amber-400">
+                  No money left over to save — trim your budget to start building
+                  toward this goal.
+                </span>
+              ) : (
+                <span className="text-zinc-700 dark:text-zinc-200">
+                  On track to reach{" "}
+                  <span className="font-semibold">
+                    {formatEur(projection.target)}
+                  </span>{" "}
+                  in{" "}
+                  <span className="font-semibold">
+                    {formatDuration(projection.monthsToTarget / 12)}
+                  </span>{" "}
+                  — around{" "}
+                  <span className="font-semibold">
+                    {dateInMonths(projection.monthsToTarget)}
+                  </span>
+                  .
+                </span>
+              )}
+            </div>
+          </div>
         )}
       </div>
 
