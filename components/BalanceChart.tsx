@@ -278,6 +278,10 @@ export default function BalanceChart({
             <span className="font-semibold text-emerald-600 dark:text-emerald-400">
               {formatEur(hp.balance)}
             </span>
+            <span className="mx-1.5 text-zinc-300 dark:text-zinc-600">·</span>
+            <span className="text-zinc-500 dark:text-zinc-400">
+              {formatEur(hp.contributed)} invested
+            </span>
             {showReal && (
               <>
                 <span className="mx-1.5 text-zinc-300 dark:text-zinc-600">·</span>
