@@ -4,6 +4,14 @@
 // sections into doughnut slices (each section, plus a "left to budget"
 // remainder) with the fractions and colours the chart needs.
 
+import { formatEur } from "@/lib/format";
+
+/**
+ * Euro tolerance for float comparisons — leftovers or overruns below this
+ * (a fraction of a cent) are treated as "exactly on budget", not as a slice.
+ */
+export const BUDGET_EPSILON_EUR = 0.005;
+
 /** One editable line — used for both income sources and spending sections. */
 export type BudgetRow = {
   id: string;
@@ -94,7 +102,7 @@ export function computeBudget(
   const allocated = valued.reduce((sum, s) => sum + s.amount, 0);
   const remaining = income - allocated;
   const total = Math.max(income, allocated);
-  const overBudget = remaining < -0.005;
+  const overBudget = remaining < -BUDGET_EPSILON_EUR;
 
   const slices: BudgetSlice[] = valued.map((s) => ({
     id: s.id,
@@ -105,7 +113,7 @@ export function computeBudget(
     isRemainder: false,
   }));
 
-  if (remaining > 0.005) {
+  if (remaining > BUDGET_EPSILON_EUR) {
     slices.push({
       id: REMAINDER_ID,
       name: remainderLabel,
@@ -297,4 +305,95 @@ export function normalizeState(s: unknown, fallback: BudgetState): BudgetState {
     salary: normalizePlan(o.salary ?? (hasFlatPlan ? o : undefined), fallback.salary),
     trip,
   };
+}
+
+/** An empty plan for a mode, used when the user resets the current tab. */
+export function blankPlan(mode: Mode): PlanData {
+  return {
+    incomes: [
+      {
+        id: crypto.randomUUID(),
+        name: mode === "trip" ? "Trip budget" : "",
+        amount: "",
+      },
+    ],
+    sections: [{ id: crypto.randomUUID(), name: "", amount: "" }],
+    savings: {
+      enabled: false,
+      balance: "",
+      target: "",
+      perMonth: "",
+      monthsUntilTrip: "",
+    },
+  };
+}
+
+/** Which colour bucket the status pill uses; mapped to Tailwind classes by the UI. */
+export type StatusTone = "zinc" | "amber" | "emerald";
+
+/** The single-line summary shown under the doughnut. */
+export type StatusPill = { tone: StatusTone; text: string };
+
+/**
+ * The at-a-glance status under the doughnut: neutral prompts when there's
+ * nothing to summarise yet, amber when over budget, emerald when balanced or
+ * with money to spare. Wording and tone differ between the two modes.
+ */
+export function computeStatusPill(args: {
+  mode: Mode;
+  allocated: number;
+  income: number;
+  overBudget: boolean;
+  remaining: number;
+  savingsEnabled: boolean;
+}): StatusPill {
+  const { mode, allocated, income, overBudget, remaining, savingsEnabled } = args;
+  if (mode === "trip") {
+    if (allocated <= 0)
+      return { tone: "zinc", text: "Add trip costs to see the total" };
+    if (income <= 0)
+      return { tone: "zinc", text: `${formatEur(allocated)} total trip cost` };
+    if (overBudget)
+      return { tone: "amber", text: `${formatEur(-remaining)} over budget` };
+    if (remaining < BUDGET_EPSILON_EUR)
+      return { tone: "emerald", text: "Right on budget 🎯" };
+    return { tone: "emerald", text: `${formatEur(remaining)} under budget` };
+  }
+  if (income <= 0)
+    return { tone: "zinc", text: "Add your monthly income to see what's left" };
+  if (overBudget)
+    return { tone: "amber", text: `${formatEur(-remaining)} over budget` };
+  if (remaining < BUDGET_EPSILON_EUR)
+    return { tone: "emerald", text: "Every euro allocated 🎉" };
+  return {
+    tone: "emerald",
+    text: savingsEnabled
+      ? `${formatEur(remaining)} going to savings`
+      : `${formatEur(remaining)} left to budget`,
+  };
+}
+
+/** The headline figure for the trip savings panel — the most decision-relevant number. */
+export type TripHeadline = { value: number; unit: string; label: string };
+
+/**
+ * Pick the trip savings headline: the goal once reached, else the required
+ * monthly amount when a deadline is set, else the pace the user entered, else
+ * the plain trip total.
+ */
+export function computeTripHeadline(
+  tripProj: TripSavings,
+  perMonth: number,
+): TripHeadline {
+  if (tripProj.reached)
+    return { value: tripProj.target, unit: "", label: "saved — you're all set!" };
+  if (tripProj.requiredPerMonth !== null)
+    return {
+      value: tripProj.requiredPerMonth,
+      unit: " /mo",
+      label: "to save each month",
+    };
+  if (perMonth > 0)
+    return { value: perMonth, unit: " /mo", label: "you're saving each month" };
+  return { value: tripProj.target, unit: "", label: "total trip cost" };
 }

@@ -22,6 +22,12 @@ const C = SIZE / 2; // centre
 const R = 84; // mid radius of the ring
 const THICK = 34; // ring thickness
 const POP = 7; // extra thickness when a slice is highlighted
+/** Normalised circumference each slice's dasharray is measured against. */
+const PATH_LENGTH = 100;
+/** A sliver of dash so a near-zero slice still renders as a hairline. */
+const MIN_DASH_LENGTH = 0.001;
+/** Truncate the centre label past this many characters so it fits the hole. */
+const MAX_CENTER_LABEL_LENGTH = 22;
 
 const pctFmt = new Intl.NumberFormat("en", {
   style: "percent",
@@ -43,19 +49,20 @@ export default function BudgetDoughnut({
   activeId,
   onActiveChange,
 }: Props) {
-  const drawn = slices.filter((s) => s.fraction > 0);
-  const active = drawn.find((s) => s.id === activeId) ?? null;
+  const drawn = slices.filter((slice) => slice.fraction > 0);
+  const active = drawn.find((slice) => slice.id === activeId) ?? null;
 
   // Lay slices edge to edge around the ring, with no gaps between them.
-  let cursor = 0;
-  const segments = drawn.map((s) => {
-    const start = cursor;
-    cursor += s.fraction;
-    const len = Math.max(s.fraction * 100, 0.001);
+  const starts = drawn.reduce<number[]>((acc, _, index) => {
+    const prev = index === 0 ? 0 : acc[index - 1] + drawn[index - 1].fraction;
+    return [...acc, prev];
+  }, []);
+  const segments = drawn.map((slice, index) => {
+    const len = Math.max(slice.fraction * PATH_LENGTH, MIN_DASH_LENGTH);
     return {
-      slice: s,
-      dash: `${len} ${100 - len}`,
-      offset: -start * 100,
+      slice,
+      dash: `${len} ${PATH_LENGTH - len}`,
+      offset: -starts[index] * PATH_LENGTH,
     };
   });
 
@@ -79,7 +86,7 @@ export default function BudgetDoughnut({
         strokeWidth={highlighted ? THICK + POP : THICK}
         strokeDasharray={seg.dash}
         strokeDashoffset={seg.offset}
-        pathLength={100}
+        pathLength={PATH_LENGTH}
         strokeLinecap="butt"
         onMouseEnter={() => onActiveChange(slice.id)}
         onMouseLeave={() => onActiveChange(null)}
@@ -122,7 +129,7 @@ export default function BudgetDoughnut({
           {/* Re-draw the focused slice on top, popped out. */}
           {active &&
             renderRing(
-              segments.find((s) => s.slice.id === active.id)!,
+              segments.find((seg) => seg.slice.id === active.id)!,
               true,
             )}
         </g>
@@ -134,8 +141,8 @@ export default function BudgetDoughnut({
           textAnchor="middle"
           className="fill-zinc-400 text-[12px]"
         >
-          {centerLabel.length > 22
-            ? `${centerLabel.slice(0, 21)}…`
+          {centerLabel.length > MAX_CENTER_LABEL_LENGTH
+            ? `${centerLabel.slice(0, MAX_CENTER_LABEL_LENGTH - 1)}…`
             : centerLabel}
         </text>
         <text
