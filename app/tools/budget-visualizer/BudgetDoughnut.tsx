@@ -9,6 +9,10 @@ type Props = {
   allocated: number;
   /** Tints the total red when sections exceed the income. */
   overBudget: boolean;
+  /** Label above the total in the hole. */
+  totalLabel?: string;
+  /** Caption below the total in the hole. */
+  subLabel?: string;
   activeId: string | null;
   onActiveChange: (id: string | null) => void;
 };
@@ -34,6 +38,8 @@ export default function BudgetDoughnut({
   slices,
   allocated,
   overBudget,
+  totalLabel = "Budgeted / month",
+  subLabel = "across all sections",
   activeId,
   onActiveChange,
 }: Props) {
@@ -82,11 +88,9 @@ export default function BudgetDoughnut({
     );
   };
 
-  const centerLabel = active ? active.name : "Budgeted / month";
+  const centerLabel = active ? active.name : totalLabel;
   const centerValue = active ? active.amount : allocated;
-  const centerSub = active
-    ? pctFmt.format(active.fraction)
-    : "across all sections";
+  const centerSub = active ? pctFmt.format(active.fraction) : subLabel;
 
   // Focused slice reads neutral; the standing total is green within income, red over it.
   const centerValueClass = active

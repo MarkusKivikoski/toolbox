@@ -40,7 +40,7 @@ export const tools: Tool[] = [
     slug: "budget-visualizer",
     name: "Budget Visualizer",
     description:
-      "Split your monthly income into spending sections and see the breakdown as a doughnut, with what's left to budget in the middle.",
+      "Break a monthly budget — or a trip's costs — into a doughnut, with a savings goal that tells you when you'll get there.",
     emoji: "🍩",
     href: "/tools/budget-visualizer",
     status: "live",

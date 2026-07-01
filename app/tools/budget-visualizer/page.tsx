@@ -5,7 +5,7 @@ import BudgetVisualizer from "./BudgetVisualizer";
 export const metadata: Metadata = {
   title: "Budget Visualizer",
   description:
-    "Split your monthly income into spending sections and see the breakdown as a doughnut chart, with what's left to budget in the middle.",
+    "Break a monthly budget — or a trip's costs — into a doughnut chart, and track a savings goal, with what's left over in the middle.",
 };
 
 export default function BudgetVisualizerPage() {
@@ -29,9 +29,10 @@ export default function BudgetVisualizerPage() {
           🍩 Budget Visualizer
         </h1>
         <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-          Enter your monthly income and break it into spending sections — add or
-          remove as many as you like. The doughnut shows where it all goes, with
-          your total in the middle and whatever&apos;s left over as its own slice.
+          Break a monthly budget into spending sections, or switch to trip mode
+          and add up costs like flights and hotels. The doughnut shows where it
+          all goes, and an optional savings goal tells you when you&apos;ll get
+          there.
         </p>
       </header>
 

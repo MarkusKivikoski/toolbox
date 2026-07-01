@@ -119,13 +119,22 @@ export function computeBudget(
   return { income, allocated, remaining, total, overBudget, slices };
 }
 
-/** Optional savings goal. The monthly contribution is the unallocated leftover. */
+/**
+ * Optional savings goal. In salary mode the monthly contribution is the
+ * unallocated leftover and `target` is a goal you set; in trip mode you enter
+ * `perMonth` explicitly (and optionally `monthsUntilTrip`), saving toward the
+ * trip's total cost.
+ */
 export type SavingsState = {
   enabled: boolean;
-  /** Current balance you've already saved. */
+  /** Current balance you've already saved (both modes). */
   balance: string;
-  /** The amount you're saving toward. */
+  /** Salary mode: the amount you're saving toward. */
   target: string;
+  /** Trip mode: explicit amount saved each month. */
+  perMonth: string;
+  /** Trip mode: optional deadline, in whole months from now. */
+  monthsUntilTrip: string;
 };
 
 export type SavingsProjection = {
@@ -160,6 +169,55 @@ export function computeSavings(
   return { monthly, balance, target, progress, reached, monthsToTarget };
 }
 
+export type TripSavings = {
+  balance: number;
+  /** The trip total to save toward. */
+  target: number;
+  /** balance / target, clamped to 0–1. */
+  progress: number;
+  reached: boolean;
+  /** Months to afford it at your own pace; null when the pace is zero. */
+  monthsToAfford: number | null;
+  /** €/month needed to make the deadline; null when no deadline is set. */
+  requiredPerMonth: number | null;
+  /** Whether your pace covers the required amount (only meaningful with a deadline). */
+  onTrack: boolean;
+};
+
+/**
+ * Project saving up for a one-off trip: how long until you can afford it at your
+ * chosen monthly rate, and — if you set a deadline — how much you'd need to put
+ * aside each month to get there on top of your current savings.
+ */
+export function computeTripSavings(
+  tripTotal: number,
+  balanceStr: string,
+  perMonthStr: string,
+  monthsUntilTripStr: string,
+): TripSavings {
+  const balance = parseAmount(balanceStr);
+  const perMonth = parseAmount(perMonthStr);
+  const monthsUntil = Math.max(0, Math.floor(parseAmount(monthsUntilTripStr)));
+  const target = tripTotal;
+  const reached = target > 0 && balance >= target;
+  const toGo = Math.max(0, target - balance);
+  const monthsToAfford =
+    !reached && perMonth > 0 && target > 0 ? Math.ceil(toGo / perMonth) : null;
+  const requiredPerMonth =
+    !reached && monthsUntil > 0 && target > 0 ? toGo / monthsUntil : null;
+  const onTrack = requiredPerMonth !== null && perMonth >= requiredPerMonth;
+  const progress = target > 0 ? Math.min(1, balance / target) : 0;
+  return {
+    balance,
+    target,
+    progress,
+    reached,
+    monthsToAfford,
+    requiredPerMonth,
+    onTrack,
+  };
+}
+
 /** Backfill a stored row so older saves don't crash on load. */
 function normalizeRow(s: unknown, i: number): BudgetRow {
   const o = (s ?? {}) as Partial<BudgetRow>;
@@ -173,22 +231,34 @@ function normalizeRow(s: unknown, i: number): BudgetRow {
 /** Backfill savings; defaults to off so existing saves aren't surprised. */
 function normalizeSavings(s: unknown): SavingsState {
   const o = (s ?? {}) as Partial<SavingsState>;
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
   return {
     enabled: typeof o.enabled === "boolean" ? o.enabled : false,
-    balance: typeof o.balance === "string" ? o.balance : "",
-    target: typeof o.target === "string" ? o.target : "",
+    balance: str(o.balance),
+    target: str(o.target),
+    perMonth: str(o.perMonth),
+    monthsUntilTrip: str(o.monthsUntilTrip),
   };
 }
 
-export type BudgetState = {
+export type Mode = "salary" | "trip";
+
+/** One mode's dataset. In trip mode `incomes` holds a single "budget" row. */
+export type PlanData = {
   incomes: BudgetRow[];
   sections: BudgetRow[];
   savings: SavingsState;
 };
 
-export function normalizeState(s: unknown, fallback: BudgetState): BudgetState {
+export type BudgetState = {
+  mode: Mode;
+  salary: PlanData;
+  trip: PlanData;
+};
+
+function normalizePlan(s: unknown, fallback: PlanData): PlanData {
   // v1 stored a single `income` string; carry it into one income row.
-  const o = (s ?? {}) as Partial<BudgetState> & { income?: unknown };
+  const o = (s ?? {}) as Partial<PlanData> & { income?: unknown };
   const incomes = Array.isArray(o.incomes)
     ? o.incomes.map(normalizeRow)
     : typeof o.income === "string"
@@ -199,6 +269,32 @@ export function normalizeState(s: unknown, fallback: BudgetState): BudgetState {
     sections: Array.isArray(o.sections)
       ? o.sections.map(normalizeRow)
       : fallback.sections,
-    savings: normalizeSavings(o.savings),
+    // Preserve a stored savings block; otherwise inherit the fallback's (so a
+    // freshly-migrated trip plan keeps its enabled demo rather than going blank).
+    savings: o.savings != null ? normalizeSavings(o.savings) : fallback.savings,
+  };
+}
+
+export function normalizeState(s: unknown, fallback: BudgetState): BudgetState {
+  const o = (s ?? {}) as Partial<BudgetState> & {
+    // pre-mode saves stored the salary plan's fields at the top level.
+    incomes?: unknown;
+    sections?: unknown;
+    savings?: unknown;
+    income?: unknown;
+  };
+  const hasFlatPlan =
+    Array.isArray(o.incomes) ||
+    Array.isArray(o.sections) ||
+    typeof o.income === "string";
+  const trip = normalizePlan(o.trip, fallback.trip);
+  // Trip mode renders a single budget field, so it always needs one income row.
+  if (trip.incomes.length === 0) {
+    trip.incomes = [{ id: `trip-budget-${Date.now()}`, name: "Trip budget", amount: "" }];
+  }
+  return {
+    mode: o.mode === "trip" ? "trip" : "salary",
+    salary: normalizePlan(o.salary ?? (hasFlatPlan ? o : undefined), fallback.salary),
+    trip,
   };
 }
