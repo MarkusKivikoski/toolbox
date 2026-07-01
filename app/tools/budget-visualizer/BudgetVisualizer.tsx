@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   computeBudget,
   computeSavings,
@@ -73,6 +77,9 @@ function RowEditor({
   onRemove,
   onMouseEnter,
   onMouseLeave,
+  dragging,
+  onDragPointerDown,
+  onHandleKeyDown,
 }: {
   row: BudgetRow;
   ariaPrefix: string;
@@ -88,8 +95,13 @@ function RowEditor({
   onRemove: () => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  /** When set, a drag handle is shown and the row can be reordered. */
+  dragging?: boolean;
+  onDragPointerDown?: (e: ReactPointerEvent) => void;
+  onHandleKeyDown?: (e: ReactKeyboardEvent) => void;
 }) {
   const nameRef = useRef<HTMLInputElement>(null);
+  const draggable = onDragPointerDown != null;
 
   useEffect(() => {
     if (!autoFocus) return;
@@ -99,10 +111,33 @@ function RowEditor({
 
   return (
     <div
-      className="grid grid-cols-[1fr_6.5rem_2.25rem] items-center gap-2"
+      data-row-id={row.id}
+      className={`grid items-center gap-2 rounded-xl transition-opacity ${
+        draggable
+          ? "grid-cols-[1.25rem_1fr_6.5rem_2.25rem]"
+          : "grid-cols-[1fr_6.5rem_2.25rem]"
+      } ${dragging ? "opacity-50" : ""}`}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
+      {draggable && (
+        <button
+          type="button"
+          aria-label={`Reorder ${row.name.trim() || fallbackNoun}`}
+          onPointerDown={onDragPointerDown}
+          onKeyDown={onHandleKeyDown}
+          className="flex h-9 w-5 cursor-grab touch-none items-center justify-center rounded text-zinc-300 outline-none hover:text-zinc-500 focus-visible:ring-2 focus-visible:ring-emerald-500/40 active:cursor-grabbing dark:text-zinc-600 dark:hover:text-zinc-400"
+        >
+          <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden>
+            <circle cx="7.5" cy="5" r="1.4" />
+            <circle cx="12.5" cy="5" r="1.4" />
+            <circle cx="7.5" cy="10" r="1.4" />
+            <circle cx="12.5" cy="10" r="1.4" />
+            <circle cx="7.5" cy="15" r="1.4" />
+            <circle cx="12.5" cy="15" r="1.4" />
+          </svg>
+        </button>
+      )}
       <div className="flex items-center rounded-xl border border-zinc-300 bg-white px-2.5 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-950">
         {showDot && (
           <span
@@ -211,6 +246,9 @@ export default function BudgetVisualizer() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [focusRowId, setFocusRowId] = useState<string | null>(null);
   const clearFocusRow = useCallback(() => setFocusRowId(null), []);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const dragIdRef = useRef<string | null>(null);
+  const sectionsListRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try {
@@ -278,6 +316,76 @@ export default function BudgetVisualizer() {
       [field]: s[field].filter((r) => r.id !== id),
     }));
   };
+
+  const moveSection = (from: number, to: number) =>
+    setState((s) => {
+      if (to < 0 || to >= s.sections.length || from === to) return s;
+      const sections = s.sections.slice();
+      const [moved] = sections.splice(from, 1);
+      sections.splice(to, 0, moved);
+      return { ...s, sections };
+    });
+
+  // --- Drag-to-reorder (pointer-based, so it works with mouse and touch) ---
+
+  // Slot the dragged section wherever the pointer is, by comparing against the
+  // midpoints of the other rows currently on screen.
+  const reorderToPointer = useCallback((clientY: number) => {
+    const container = sectionsListRef.current;
+    const draggingId = dragIdRef.current;
+    if (!container || !draggingId) return;
+    const rows = Array.from(
+      container.querySelectorAll<HTMLElement>("[data-row-id]"),
+    );
+    const otherIds: string[] = [];
+    let insertAt = 0;
+    for (const el of rows) {
+      const id = el.dataset.rowId!;
+      if (id === draggingId) continue;
+      const rect = el.getBoundingClientRect();
+      if (clientY > rect.top + rect.height / 2) insertAt = otherIds.length + 1;
+      otherIds.push(id);
+    }
+    otherIds.splice(insertAt, 0, draggingId);
+    setState((s) => {
+      const byId = new Map(s.sections.map((r) => [r.id, r]));
+      const next = otherIds
+        .map((id) => byId.get(id))
+        .filter((r): r is BudgetRow => r != null);
+      if (next.length !== s.sections.length) return s;
+      const changed = next.some((r, i) => r.id !== s.sections[i].id);
+      return changed ? { ...s, sections: next } : s;
+    });
+  }, []);
+
+  const onDragPointerMove = useCallback(
+    (e: PointerEvent) => reorderToPointer(e.clientY),
+    [reorderToPointer],
+  );
+
+  const endDrag = useCallback(() => {
+    dragIdRef.current = null;
+    setDragId(null);
+    window.removeEventListener("pointermove", onDragPointerMove);
+    window.removeEventListener("pointerup", endDrag);
+    window.removeEventListener("pointercancel", endDrag);
+  }, [onDragPointerMove]);
+
+  const startDrag = useCallback(
+    (e: ReactPointerEvent, id: string) => {
+      e.preventDefault();
+      dragIdRef.current = id;
+      setDragId(id);
+      setActiveId(null);
+      window.addEventListener("pointermove", onDragPointerMove);
+      window.addEventListener("pointerup", endDrag);
+      window.addEventListener("pointercancel", endDrag);
+    },
+    [onDragPointerMove, endDrag],
+  );
+
+  // Drop any stray listeners if we unmount mid-drag.
+  useEffect(() => endDrag, [endDrag]);
 
   const handleReset = () => {
     if (!confirmReset) {
@@ -367,7 +475,10 @@ export default function BudgetVisualizer() {
           <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
             Budget sections
           </span>
-          <div className="mt-2 space-y-2">
+          <div
+            ref={sectionsListRef}
+            className={`mt-2 space-y-2 ${dragId ? "select-none" : ""}`}
+          >
             {sections.length === 0 && (
               <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-5 text-center text-sm text-zinc-400 dark:border-zinc-700">
                 No sections yet — add one to start splitting up your budget.
@@ -389,8 +500,21 @@ export default function BudgetVisualizer() {
                   onName={(v) => updateRow("sections", row.id, { name: v })}
                   onAmount={(v) => updateRow("sections", row.id, { amount: v })}
                   onRemove={() => removeRow("sections", row.id)}
-                  onMouseEnter={() => (amount > 0 ? setActiveId(row.id) : undefined)}
-                  onMouseLeave={() => setActiveId(null)}
+                  onMouseEnter={() =>
+                    !dragId && amount > 0 ? setActiveId(row.id) : undefined
+                  }
+                  onMouseLeave={() => !dragId && setActiveId(null)}
+                  dragging={row.id === dragId}
+                  onDragPointerDown={(e) => startDrag(e, row.id)}
+                  onHandleKeyDown={(e) => {
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      moveSection(i, i - 1);
+                    } else if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      moveSection(i, i + 1);
+                    }
+                  }}
                 />
               );
             })}
