@@ -5,6 +5,7 @@
 // remainder) with the fractions and colours the chart needs.
 
 import { formatEur } from "@/lib/format";
+import { parseAmount } from "@/lib/utils";
 
 /**
  * Euro tolerance for float comparisons — leftovers or overruns below this
@@ -65,16 +66,6 @@ export const REMAINDER_ID = "__remainder__";
 /** The colour a section at a given position is drawn with. */
 export function colorForIndex(index: number): string {
   return SECTION_COLORS[index % SECTION_COLORS.length];
-}
-
-/** Parse a free-typed euro figure, tolerating spaces and a comma decimal. */
-export function parseAmount(s: string): number {
-  const cleaned = s
-    .replace(/\s/g, "")
-    .replace(/,/g, ".")
-    .replace(/[^0-9.]/g, "");
-  const n = parseFloat(cleaned);
-  return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
 /**

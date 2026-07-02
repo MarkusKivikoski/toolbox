@@ -45,4 +45,13 @@ export const tools: Tool[] = [
     href: "/tools/budget-visualizer",
     status: "live",
   },
+  {
+    slug: "tax-bracket-visualizer",
+    name: "Tax Bracket Visualizer",
+    description:
+      "See how Finnish 2026 income tax eats a gross salary — progressive brackets, net pay, and your marginal rate on the next euro.",
+    emoji: "🧾",
+    href: "/tools/tax-bracket-visualizer",
+    status: "live",
+  },
 ];

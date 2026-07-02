@@ -1,6 +1,5 @@
 import type { BudgetSlice } from "@/lib/budget";
-import { formatEur } from "@/lib/format";
-import { pctFmt } from "../utils";
+import { formatEur, formatPercent } from "@/lib/format";
 
 type Props = {
   slices: BudgetSlice[];
@@ -56,7 +55,7 @@ export default function BudgetLegend({
               {slice.name}
             </span>
             <span className="shrink-0 text-xs tabular-nums text-zinc-400">
-              {pctFmt.format(slice.fraction)}
+              {formatPercent(slice.fraction)}
             </span>
             <span className="w-20 shrink-0 text-right text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
               {formatEur(slice.amount)}
@@ -72,7 +71,7 @@ export default function BudgetLegend({
           {allocatedLabel}
         </span>
         <span className="shrink-0 text-xs tabular-nums text-zinc-400">
-          {income > 0 ? pctFmt.format(allocated / income) : ""}
+          {income > 0 ? formatPercent(allocated / income) : ""}
         </span>
         <span className="w-20 shrink-0 text-right text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
           {formatEur(allocated)}

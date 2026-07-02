@@ -4,9 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import {
   computeStatusPill,
   computeTripHeadline,
-  parseAmount,
   type BudgetRow,
 } from "@/lib/budget";
+import { parseAmount } from "@/lib/utils";
 import { COPY, TONE } from "./copy";
 import { RESET_CONFIRM_TIMEOUT_MS } from "./constants";
 import { usePersistedBudgetState } from "./hooks/usePersistedBudgetState";

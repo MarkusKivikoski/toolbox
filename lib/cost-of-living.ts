@@ -82,6 +82,54 @@ export function annualInflation(fromYear: number, toYear: number): number {
   return Math.pow(b / a, 1 / (later - earlier)) - 1;
 }
 
+// --- Persisted comparison state ---------------------------------------------
+
+/** The two salary/year pairs the tool compares. Salaries stay strings so
+ * partial input (e.g. mid-typing) survives a reload. */
+export type State = {
+  yearA: number;
+  salaryA: string;
+  yearB: number;
+  salaryB: string;
+};
+
+export const DEFAULT_STATE: State = {
+  yearA: 2015,
+  salaryA: "3000",
+  yearB: MAX_YEAR,
+  salaryB: "3500",
+};
+
+/** Backfill/validate a stored state so old or malformed saves don't crash. */
+export function normalizeState(stored: unknown): State {
+  const raw = (stored ?? {}) as Partial<State>;
+  const validYear = (value: unknown, fallback: number) =>
+    typeof value === "number" && isYearAvailable(value) ? value : fallback;
+  const text = (value: unknown, fallback: string) =>
+    typeof value === "string" ? value : fallback;
+  return {
+    yearA: validYear(raw.yearA, DEFAULT_STATE.yearA),
+    salaryA: text(raw.salaryA, DEFAULT_STATE.salaryA),
+    yearB: validYear(raw.yearB, DEFAULT_STATE.yearB),
+    salaryB: text(raw.salaryB, DEFAULT_STATE.salaryB),
+  };
+}
+
+/** Carry a v1 single-salary save into pair A so returning users keep their figures. */
+export function fromLegacy(stored: unknown): State {
+  const legacy = (stored ?? {}) as {
+    amount?: string;
+    fromYear?: number;
+    toYear?: number;
+  };
+  return normalizeState({
+    yearA: legacy.fromYear,
+    salaryA: legacy.amount,
+    yearB: legacy.toYear,
+    salaryB: "",
+  });
+}
+
 // --- Historical currency units ----------------------------------------------
 // The euro replaced the markka in 2002 at an irrevocable rate of 5.94573 mk/€.
 // The 1963 currency reform redenominated 100 "old" markka into 1 "new" markka.

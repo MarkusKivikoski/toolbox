@@ -31,6 +31,45 @@ export function compactEur(value: number): string {
   return `${sign}€${Math.round(abs)}`;
 }
 
+const percentFormatters = new Map<string, Intl.NumberFormat>();
+
+function percentFormatter(locale: string, maximumFractionDigits: number): Intl.NumberFormat {
+  const key = `${locale}:${maximumFractionDigits}`;
+  let formatter = percentFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat(locale, {
+      style: "percent",
+      maximumFractionDigits,
+    });
+    percentFormatters.set(key, formatter);
+  }
+  return formatter;
+}
+
+type FormatPercentOptions = {
+  /** Prefix a "+" on positive values (negatives already carry a "−"). */
+  signed?: boolean;
+  maximumFractionDigits?: number;
+  locale?: string;
+  /** What to show when the fraction isn't a finite number. */
+  nonFinite?: string;
+};
+
+/** Format a fraction as a percent, e.g. 0.42 → "42 %" (or "+42 %" when signed). */
+export function formatPercent(
+  fraction: number,
+  {
+    signed = false,
+    maximumFractionDigits = 0,
+    locale = "en",
+    nonFinite = "–",
+  }: FormatPercentOptions = {},
+): string {
+  if (!Number.isFinite(fraction)) return nonFinite;
+  const formatted = percentFormatter(locale, maximumFractionDigits).format(fraction);
+  return signed && fraction > 0 ? `+${formatted}` : formatted;
+}
+
 /** "3 yr 4 mo" from a fractional number of years. */
 export function formatDuration(years: number): string {
   const totalMonths = Math.round(years * 12);

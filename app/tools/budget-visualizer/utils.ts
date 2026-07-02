@@ -8,12 +8,6 @@ export const newRowId = () => crypto.randomUUID();
 export const capitalizeFirst = (value: string) =>
   value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
 
-/** Whole-number percentages, e.g. "42%", for the legend and progress readouts. */
-export const pctFmt = new Intl.NumberFormat("en", {
-  style: "percent",
-  maximumFractionDigits: 0,
-});
-
 /** A "Mon YYYY" label for a date this many whole months from today. */
 export const dateInMonths = (months: number) => {
   const date = new Date();

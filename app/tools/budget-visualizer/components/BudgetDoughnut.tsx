@@ -1,7 +1,7 @@
 "use client";
 
 import type { BudgetSlice } from "@/lib/budget";
-import { formatEur } from "@/lib/format";
+import { formatEur, formatPercent } from "@/lib/format";
 
 type Props = {
   slices: BudgetSlice[];
@@ -29,10 +29,8 @@ const MIN_DASH_LENGTH = 0.001;
 /** Truncate the centre label past this many characters so it fits the hole. */
 const MAX_CENTER_LABEL_LENGTH = 22;
 
-const pctFmt = new Intl.NumberFormat("en", {
-  style: "percent",
-  maximumFractionDigits: 1,
-});
+/** The centre label shows finer-grained shares than the legend, hence 1 digit. */
+const CENTER_PERCENT_DIGITS = 1;
 
 /**
  * A dependency-free doughnut. Each slice is a stroked circle sized with
@@ -97,7 +95,9 @@ export default function BudgetDoughnut({
 
   const centerLabel = active ? active.name : totalLabel;
   const centerValue = active ? active.amount : allocated;
-  const centerSub = active ? pctFmt.format(active.fraction) : subLabel;
+  const centerSub = active
+    ? formatPercent(active.fraction, { maximumFractionDigits: CENTER_PERCENT_DIGITS })
+    : subLabel;
 
   // Focused slice reads neutral; the standing total is green within income, red over it.
   const centerValueClass = active

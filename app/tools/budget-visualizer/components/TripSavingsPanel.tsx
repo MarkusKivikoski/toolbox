@@ -1,6 +1,6 @@
 import type { TripHeadline, TripSavings } from "@/lib/budget";
-import { formatDuration, formatEur } from "@/lib/format";
-import { dateInMonths, pctFmt } from "../utils";
+import { formatDuration, formatEur, formatPercent } from "@/lib/format";
+import { dateInMonths } from "../utils";
 import { MIN_VISIBLE_PROGRESS_PCT } from "../constants";
 
 type Props = {
@@ -43,7 +43,7 @@ export default function TripSavingsPanel({
               </span>
             </div>
             <div className="text-xs text-zinc-400">
-              {pctFmt.format(proj.progress)} saved
+              {formatPercent(proj.progress)} saved
             </div>
           </div>
         )}

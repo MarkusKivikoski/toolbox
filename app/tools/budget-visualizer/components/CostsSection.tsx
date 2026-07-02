@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { colorForIndex, parseAmount, type BudgetRow, type Mode } from "@/lib/budget";
+import { colorForIndex, type BudgetRow, type Mode } from "@/lib/budget";
+import { parseAmount } from "@/lib/utils";
 import type { COPY } from "../copy";
 import RowEditor from "./RowEditor";
 import AddButton from "./AddButton";
