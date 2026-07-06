@@ -46,6 +46,15 @@ export const tools: Tool[] = [
     status: "live",
   },
   {
+    slug: "currency-converter",
+    name: "Currency Converter",
+    description:
+      "Convert one amount into several currencies at once — free daily reference rates, cached so it works offline.",
+    emoji: "💱",
+    href: "/tools/currency-converter",
+    status: "live",
+  },
+  {
     slug: "tax-bracket-visualizer",
     name: "Tax Bracket Visualizer",
     description:

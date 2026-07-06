@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   calculateProjection,
   normalizeInput,
+  DEFAULT_INPUT,
+  EMPTY_INPUT,
   type ContributionPhase,
   type InvestingInput,
 } from "@/lib/investing";
@@ -13,63 +15,12 @@ import { toXlsxBlob } from "@/lib/exportXlsx";
 import { download } from "@/lib/download";
 import BalanceChart from "@/components/BalanceChart";
 import SavedCalculations from "@/components/SavedCalculations";
-
-const STORAGE_KEY = "toolbox.investing-calculator.v1";
-
-let phaseSeq = 0;
-const newPhaseId = () => `phase-${++phaseSeq}-${Date.now()}`;
-
-// Defaults model the example: 10k start at age 30, 100€/mo at first, 250€/mo
-// after a year, then 400€/mo after a pay raise until retiring at 60 — then
-// living off it to age 90.
-const DEFAULT_INPUT: InvestingInput = {
-  startingBalance: 10000,
-  annualReturnPct: 7,
-  currentAge: 30,
-  retirementAge: 60,
-  lifeExpectancy: 90,
-  phases: [
-    { id: "phase-a", years: 1, monthlyContribution: 100 },
-    { id: "phase-b", years: 4, monthlyContribution: 250 },
-    { id: "phase-c", years: 25, monthlyContribution: 400 },
-  ],
-  retirement: {
-    enabled: true,
-    mode: "fixed",
-    basis: "net",
-    monthlyWithdrawal: 2500,
-    annualReturnPct: 5,
-    capitalGainsTaxPct: 30,
-    usePresumedCost: true,
-    kansanelake: 0,
-    kansanelakeTaxPct: 0,
-    kansanelakeStartAge: 65,
-  },
-  inflationPct: 0,
-};
-
-// A clean slate for "New calculation".
-const BLANK_INPUT: InvestingInput = {
-  startingBalance: 0,
-  annualReturnPct: 7,
-  currentAge: 30,
-  retirementAge: 65,
-  lifeExpectancy: 90,
-  phases: [{ id: "phase-new", years: 10, monthlyContribution: 100 }],
-  retirement: {
-    enabled: false,
-    mode: "fixed",
-    basis: "net",
-    monthlyWithdrawal: 1500,
-    annualReturnPct: 4,
-    capitalGainsTaxPct: 30,
-    usePresumedCost: true,
-    kansanelake: 0,
-    kansanelakeTaxPct: 0,
-    kansanelakeStartAge: 65,
-  },
-  inflationPct: 0,
-};
+import { usePersistedInvestingState } from "./hooks/usePersistedInvestingState";
+import {
+  EXPORT_FILENAME_BASE,
+  NEW_PHASE_DEFAULT_CONTRIBUTION,
+  NEW_PHASE_DEFAULT_YEARS,
+} from "./constants";
 
 /** Text input that round-trips through a number while letting you type
  *  intermediate values like "7." or a comma decimal separator. */
@@ -94,12 +45,17 @@ function NumberField({
 }) {
   const [text, setText] = useState(value === 0 ? "" : String(value));
 
-  useEffect(() => {
+  // Sync the text when the numeric prop changes from outside (loading a saved
+  // calculation, phase edits) without clobbering in-progress typing like
+  // "7." — the React "adjust state during render" pattern.
+  const [lastValue, setLastValue] = useState(value);
+  if (value !== lastValue) {
+    setLastValue(value);
     const parsed = parseFloat(text.replace(",", "."));
-    const current = Number.isFinite(parsed) ? parsed : 0;
-    if (current !== value) setText(value === 0 ? "" : String(value));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+    if ((Number.isFinite(parsed) ? parsed : 0) !== value) {
+      setText(value === 0 ? "" : String(value));
+    }
+  }
 
   return (
     <label className="block">
@@ -181,26 +137,7 @@ function StatTile({
 }
 
 export default function InvestingCalculator() {
-  const [input, setInput] = useState<InvestingInput>(DEFAULT_INPUT);
-
-  // Restore previous session.
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) setInput(normalizeInput(JSON.parse(saved)));
-    } catch {
-      /* ignore malformed storage */
-    }
-  }, []);
-
-  // Persist on change.
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(input));
-    } catch {
-      /* storage may be unavailable */
-    }
-  }, [input]);
+  const { input, setInput, hydrated } = usePersistedInvestingState(DEFAULT_INPUT);
 
   const result = useMemo(() => calculateProjection(input), [input]);
   const showReal = input.inflationPct > 0;
@@ -224,7 +161,7 @@ export default function InvestingCalculator() {
       // The current last phase becomes finite; the new one runs to retirement.
       const finite = prev.phases.map((p, idx) =>
         idx === prev.phases.length - 1
-          ? { ...p, years: p.years > 0 ? p.years : 5 }
+          ? { ...p, years: p.years > 0 ? p.years : NEW_PHASE_DEFAULT_YEARS }
           : p
       );
       return {
@@ -232,9 +169,11 @@ export default function InvestingCalculator() {
         phases: [
           ...finite,
           {
-            id: newPhaseId(),
-            years: 5,
-            monthlyContribution: last ? last.monthlyContribution : 100,
+            id: crypto.randomUUID(),
+            years: NEW_PHASE_DEFAULT_YEARS,
+            monthlyContribution: last
+              ? last.monthlyContribution
+              : NEW_PHASE_DEFAULT_CONTRIBUTION,
           },
         ],
       };
@@ -250,7 +189,7 @@ export default function InvestingCalculator() {
 
   // ---- spreadsheet export ----
   const [exporting, setExporting] = useState(false);
-  const exportName = `investing-calculator-${new Date().toISOString().slice(0, 10)}`;
+  const exportName = `${EXPORT_FILENAME_BASE}-${new Date().toISOString().slice(0, 10)}`;
 
   const exportCsv = () =>
     download(`${exportName}.csv`, "text/csv;charset=utf-8", toCsv(result, input));
@@ -276,29 +215,22 @@ export default function InvestingCalculator() {
     hasPension &&
     !pensionActiveAtStart &&
     input.retirement.kansanelakeStartAge < input.lifeExpectancy;
-  // depletionYear is measured from today (year 0); convert to "into retirement".
-  const depletionIntoRetirement =
-    result.depletionYear === null
-      ? 0
-      : Math.max(0, result.depletionYear - result.accumulationYears);
-
-  // How long the final ("until retirement") phase actually covers, and whether
-  // the earlier phases already overrun the time to retirement.
-  const nonLastYears = input.phases
-    .slice(0, -1)
-    .reduce((sum, p) => sum + Math.max(0, Math.round(p.years)), 0);
-  const lastPhaseYears = Math.max(0, result.accumulationYears - nonLastYears);
-  const phasesOverflow = nonLastYears > result.accumulationYears;
+  // Phase coverage and depletion timing come straight off the projection.
+  const { depletionIntoRetirement, lastPhaseYears, phasesOverflow } = result;
   const retirementAgeInvalid = result.retirementAge <= result.currentAge;
   const lifeExpectancyInvalid =
     result.lifeExpectancy <= result.retirementAge;
+
+  // Wait for the persisted draft to load so we never flash defaults over a
+  // saved session (and never clobber it with a pre-hydration write).
+  if (!hydrated) return null;
 
   return (
     <div className="space-y-6">
       <SavedCalculations
         current={input}
         onLoad={(loaded) => setInput(normalizeInput(loaded))}
-        defaultInput={BLANK_INPUT}
+        defaultInput={EMPTY_INPUT}
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">

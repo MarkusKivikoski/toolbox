@@ -139,25 +139,43 @@ five places.
 
 ### localStorage persistence
 
-Every tool that needs persistence follows the hydration-guard pattern:
+Every tool that needs persistence uses the shared hook
+`useLocalStorageState` from `@/hooks/useLocalStorageState` (built on
+`useSyncExternalStore`; its React-free core lives in
+`lib/localStorageStore.ts` and is unit-tested). Do **not** hand-roll the old
+two-effect "hydration guard" — synchronous `setState` in a mount effect trips
+`react-hooks/set-state-in-effect`.
 
 ```ts
-const [hydrated, setHydrated] = useState(false);
+const normalizeStoredThing = (stored: unknown): Thing => /* validate + backfill */;
 
-useEffect(() => {
-  // load from localStorage
-  setHydrated(true);
-}, []);
-
-useEffect(() => {
-  if (!hydrated) return;
-  // write to localStorage
-}, [data, hydrated]);
+const { value, setValue, hydrated } = useLocalStorageState({
+  storageKey: "toolbox.<slug>.<purpose>.v<n>",
+  defaultValue: DEFAULT_THING,        // module-level const
+  normalize: normalizeStoredThing,    // module-level const
+  legacy: { storageKey: OLD_KEY, migrate: fromLegacy }, // optional old-key fallback
+});
 ```
+
+Rules and behavior:
+
+- `defaultValue`, `normalize`, and `legacy` must be stable module-level
+  values — `defaultValue` doubles as the prerender/SSR snapshot.
+- The prerender and hydration render see `defaultValue`; use `hydrated`
+  (false until after hydration) to gate a `Loading…` placeholder.
+- Writes happen synchronously in `setValue` (which also accepts updater
+  functions) — there is no separate persist effect. Edits made in another
+  tab propagate automatically via the `storage` event.
+- Per-tool wrappers (e.g. `usePersistedBudgetState`) supply the key, default,
+  and normalizer, and live in the tool's `hooks/` folder as before. Truly
+  shared hooks live in the repo-root `hooks/` folder.
 
 Key naming convention: `toolbox.<slug>.<purpose>.v<n>` — e.g. `toolbox.darts-score.game.v1`.
 
-When a stored schema gains new fields, add a `normalizeXxx()` migration function that backfills defaults at load time so old saves don't crash.
+When a stored schema gains new fields, extend the `normalizeXxx()` migration
+function so it backfills defaults at load time and old saves don't crash; for
+a key/shape change, bump `v<n>` and read the old key via the `legacy` option
+(migrated data is re-written to the new key on the first edit).
 
 ### Styling
 

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { InvestingInput } from "@/lib/investing";
+import { useState } from "react";
+import { useLocalStorageState } from "@/hooks/useLocalStorageState";
+import { normalizeInput, type InvestingInput } from "@/lib/investing";
 
 export type SavedCalc = {
   id: string;
@@ -14,19 +15,19 @@ const KEY = "toolbox.investing-calculator.saved.v1";
 
 type Store = { calcs: SavedCalc[]; activeId: string | null };
 
-function loadStore(): Store {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed.calcs)) {
-        return { calcs: parsed.calcs, activeId: parsed.activeId ?? null };
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-  return { calcs: [], activeId: null };
+const EMPTY_STORE: Store = { calcs: [], activeId: null };
+
+function normalizeStore(stored: unknown): Store {
+  if (typeof stored !== "object" || stored === null) return EMPTY_STORE;
+  const parsed = stored as Store;
+  if (!Array.isArray(parsed.calcs)) return EMPTY_STORE;
+  return {
+    calcs: parsed.calcs.map((calc) => ({
+      ...calc,
+      input: normalizeInput(calc.input),
+    })),
+    activeId: parsed.activeId ?? null,
+  };
 }
 
 const clone = (input: InvestingInput): InvestingInput =>
@@ -44,30 +45,18 @@ export default function SavedCalculations({
   onLoad: (input: InvestingInput) => void;
   defaultInput: InvestingInput;
 }) {
-  const [calcs, setCalcs] = useState<SavedCalc[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [hydrated, setHydrated] = useState(false);
+  const { value: store, setValue: setStore } = useLocalStorageState({
+    storageKey: KEY,
+    defaultValue: EMPTY_STORE,
+    normalize: normalizeStore,
+  });
+  const { calcs, activeId } = store;
+  // What the user has typed since last picking/saving a calculation; when
+  // null, the input shows the active calculation's saved name.
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
 
-  useEffect(() => {
-    const store = loadStore();
-    setCalcs(store.calcs);
-    setActiveId(store.activeId);
-    const act = store.calcs.find((c) => c.id === store.activeId);
-    if (act) setName(act.name);
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(KEY, JSON.stringify({ calcs, activeId }));
-    } catch {
-      /* ignore */
-    }
-  }, [calcs, activeId, hydrated]);
-
-  const active = calcs.find((c) => c.id === activeId) ?? null;
+  const active = calcs.find((calc) => calc.id === activeId) ?? null;
+  const name = nameDraft ?? active?.name ?? "";
   const dirty = active
     ? JSON.stringify(active.input) !== JSON.stringify(current)
     : false;
@@ -76,49 +65,57 @@ export default function SavedCalculations({
   function save() {
     if (!trimmed) return;
     if (active) {
-      setCalcs((cs) =>
-        cs.map((c) =>
-          c.id === active.id
-            ? { ...c, name: trimmed, input: clone(current), updatedAt: Date.now() }
-            : c
-        )
-      );
+      setStore((previous) => ({
+        ...previous,
+        calcs: previous.calcs.map((calc) =>
+          calc.id === active.id
+            ? { ...calc, name: trimmed, input: clone(current), updatedAt: Date.now() }
+            : calc
+        ),
+      }));
     } else {
       const id = newId();
-      setCalcs((cs) => [
-        ...cs,
-        { id, name: trimmed, input: clone(current), updatedAt: Date.now() },
-      ]);
-      setActiveId(id);
+      setStore((previous) => ({
+        calcs: [
+          ...previous.calcs,
+          { id, name: trimmed, input: clone(current), updatedAt: Date.now() },
+        ],
+        activeId: id,
+      }));
     }
+    setNameDraft(null);
   }
 
   function saveAsCopy() {
     const id = newId();
     const copyName = trimmed ? `${trimmed} (copy)` : "Untitled";
-    setCalcs((cs) => [
-      ...cs,
-      { id, name: copyName, input: clone(current), updatedAt: Date.now() },
-    ]);
-    setActiveId(id);
-    setName(copyName);
+    setStore((previous) => ({
+      calcs: [
+        ...previous.calcs,
+        { id, name: copyName, input: clone(current), updatedAt: Date.now() },
+      ],
+      activeId: id,
+    }));
+    setNameDraft(null);
   }
 
-  function load(c: SavedCalc) {
-    setActiveId(c.id);
-    setName(c.name);
-    onLoad(clone(c.input));
+  function load(calc: SavedCalc) {
+    setStore((previous) => ({ ...previous, activeId: calc.id }));
+    setNameDraft(null);
+    onLoad(clone(calc.input));
   }
 
-  function remove(c: SavedCalc) {
-    if (!confirm(`Delete "${c.name}"?`)) return;
-    setCalcs((cs) => cs.filter((x) => x.id !== c.id));
-    if (activeId === c.id) setActiveId(null);
+  function remove(calc: SavedCalc) {
+    if (!confirm(`Delete "${calc.name}"?`)) return;
+    setStore((previous) => ({
+      calcs: previous.calcs.filter((savedCalc) => savedCalc.id !== calc.id),
+      activeId: previous.activeId === calc.id ? null : previous.activeId,
+    }));
   }
 
   function newCalc() {
-    setActiveId(null);
-    setName("");
+    setStore((previous) => ({ ...previous, activeId: null }));
+    setNameDraft(null);
     onLoad(clone(defaultInput));
   }
 
@@ -191,7 +188,7 @@ export default function SavedCalculations({
         <input
           type="text"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(event) => setNameDraft(event.target.value)}
           placeholder="Name this calculation…"
           className="min-w-0 flex-1 basis-48 rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-base shadow-sm outline-none transition-colors focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-950 sm:text-sm"
         />

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useLocalStorageState } from "@/hooks/useLocalStorageState";
 import {
   applyDart,
   applyLegWin,
@@ -87,63 +88,47 @@ function normalizeGame(g: GameState): GameState {
   };
 }
 
+const EMPTY_ROSTER: string[] = [];
+
+const normalizeStoredRoster = (stored: unknown): string[] =>
+  Array.isArray(stored)
+    ? stored.filter((name): name is string => typeof name === "string")
+    : EMPTY_ROSTER;
+
+// The game key stores `null` between games, so the normalizer must accept it.
+const normalizeStoredGame = (stored: unknown): GameState | null => {
+  if (typeof stored !== "object" || stored === null) return null;
+  const parsed = stored as GameState;
+  return Array.isArray(parsed.players) ? normalizeGame(parsed) : null;
+};
+
+const normalizeStoredDefaults = (stored: unknown): SetupDefaults => {
+  if (typeof stored !== "object" || stored === null) return DEFAULT_DEFAULTS;
+  const parsed = stored as SetupDefaults;
+  return parsed.startScore ? parsed : DEFAULT_DEFAULTS;
+};
+
 export default function DartsTracker() {
-  const [roster, setRoster] = useState<string[]>([]);
-  const [game, setGame] = useState<GameState | null>(null);
+  const { value: roster, setValue: setRoster } = useLocalStorageState({
+    storageKey: ROSTER_KEY,
+    defaultValue: EMPTY_ROSTER,
+    normalize: normalizeStoredRoster,
+  });
+  const {
+    value: game,
+    setValue: setGame,
+    hydrated,
+  } = useLocalStorageState<GameState | null>({
+    storageKey: GAME_KEY,
+    defaultValue: null,
+    normalize: normalizeStoredGame,
+  });
+  const { value: defaults, setValue: setDefaults } = useLocalStorageState({
+    storageKey: CONFIG_KEY,
+    defaultValue: DEFAULT_DEFAULTS,
+    normalize: normalizeStoredDefaults,
+  });
   const [history, setHistory] = useState<GameState[]>([]);
-  const [defaults, setDefaults] = useState<SetupDefaults>(DEFAULT_DEFAULTS);
-  const [hydrated, setHydrated] = useState(false);
-
-  // Load persisted state on mount.
-  useEffect(() => {
-    try {
-      const r = localStorage.getItem(ROSTER_KEY);
-      if (r) {
-        const parsed = JSON.parse(r);
-        if (Array.isArray(parsed)) setRoster(parsed);
-      }
-    } catch {
-      /* ignore */
-    }
-    try {
-      const g = localStorage.getItem(GAME_KEY);
-      if (g) {
-        const parsed = JSON.parse(g);
-        if (parsed && Array.isArray(parsed.players)) setGame(normalizeGame(parsed));
-      }
-    } catch {
-      /* ignore */
-    }
-    try {
-      const c = localStorage.getItem(CONFIG_KEY);
-      if (c) {
-        const parsed = JSON.parse(c);
-        if (parsed && parsed.startScore) setDefaults(parsed);
-      }
-    } catch {
-      /* ignore */
-    }
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(ROSTER_KEY, JSON.stringify(roster));
-    } catch {
-      /* ignore */
-    }
-  }, [roster, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      if (game) localStorage.setItem(GAME_KEY, JSON.stringify(game));
-      else localStorage.removeItem(GAME_KEY);
-    } catch {
-      /* ignore */
-    }
-  }, [game, hydrated]);
 
   function addPlayer(name: string) {
     const trimmed = name.trim();
@@ -180,17 +165,11 @@ export default function DartsTracker() {
       placesEnded: false,
       message: null,
     });
-    const d: SetupDefaults = {
+    setDefaults({
       startScore: cfg.startScore,
       outRule: cfg.outRule,
       format: cfg.format,
-    };
-    setDefaults(d);
-    try {
-      localStorage.setItem(CONFIG_KEY, JSON.stringify(d));
-    } catch {
-      /* ignore */
-    }
+    });
   }
 
   function nextActiveIndex(g: GameState, from: number): number {

@@ -1,48 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  DEFAULT_STATE,
-  fromLegacy,
-  MAX_YEAR,
-  normalizeState,
-  type State,
-} from "@/lib/cost-of-living";
+import { useMemo } from "react";
+import { MAX_YEAR, type State } from "@/lib/cost-of-living";
 import { parseAmount } from "@/lib/utils";
+import { usePersistedCostOfLivingState } from "./hooks/usePersistedCostOfLivingState";
 import SalaryRow from "./components/SalaryRow";
 import ComparisonEmptyState from "./components/ComparisonEmptyState";
 import ComparisonResult from "./components/ComparisonResult";
 
-const STATE_KEY = "toolbox.cost-of-living.state.v2";
-const LEGACY_KEY = "toolbox.cost-of-living.state.v1";
-
 export default function CostOfLiving() {
-  const [state, setState] = useState<State>(DEFAULT_STATE);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STATE_KEY);
-      if (raw) {
-        setState(normalizeState(JSON.parse(raw)));
-      } else {
-        const legacy = localStorage.getItem(LEGACY_KEY);
-        if (legacy) setState(fromLegacy(JSON.parse(legacy)));
-      }
-    } catch {
-      /* ignore */
-    }
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(STATE_KEY, JSON.stringify(state));
-    } catch {
-      /* ignore */
-    }
-  }, [state, hydrated]);
+  const { state, setState, hydrated } = usePersistedCostOfLivingState();
 
   const { yearA, salaryA, yearB, salaryB } = state;
   const salaryANum = useMemo(() => parseAmount(salaryA), [salaryA]);

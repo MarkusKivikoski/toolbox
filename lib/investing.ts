@@ -85,6 +85,10 @@ export type InvestingResult = {
   accumulationYears: number;
   retirementYears: number;
   totalYears: number;
+  /** Years the final ("until retirement") phase actually covers. */
+  lastPhaseYears: number;
+  /** True when earlier phases already overrun the time to retirement. */
+  phasesOverflow: boolean;
   startingBalance: number;
   /** Balance the moment saving stops / retirement starts. */
   endOfAccumulationBalance: number;
@@ -123,6 +127,8 @@ export type InvestingResult = {
   depletionYear: number | null;
   /** Age the money runs out, or null if it lasts. */
   depletionAge: number | null;
+  /** Years into retirement the money runs out (0 when it lasts). */
+  depletionIntoRetirement: number;
   /** Final balance expressed in today's money. */
   realFinalBalance: number;
 };
@@ -213,6 +219,8 @@ function simulateRetirement(o: RetSimOpts): RetSim {
 
     let tax: number;
     let net: number;
+    // Negated so an Infinity/NaN gross (from the net gross-up when tax ≥ 100%)
+    // also lands here rather than slipping through the `<` comparison.
     if (!(gross < grown)) {
       // Not enough left — liquidate the remainder.
       gross = grown;
@@ -260,59 +268,141 @@ function simulateRetirement(o: RetSimOpts): RetSim {
   };
 }
 
+// Spend-down solver parameters (see solveSpendDownBase).
+const BISECTION_ITERATIONS = 80; // halvings — well past float precision for euros
+const EXPANSION_GUARD_LIMIT = 100; // safety cap while doubling the search's upper bound
+const DEPLETION_TOLERANCE_EUR = 0.5; // a final balance under this counts as "≈0"
+
 /**
  * Year-1 monthly base (net or gross per `isNet`) that drains the pot to ≈0 at the
  * end. Tax + the presumed-cost cap make this non-linear, so we bisect — the final
  * balance is monotonically decreasing in the base, so this converges quickly.
  */
-function solveSpendDownBase(o: Omit<RetSimOpts, "base">): number {
-  if (o.months <= 0 || o.startBalance <= 0) return 0;
-  const finalFor = (base: number) =>
-    simulateRetirement({ ...o, base }).finalBalance;
+function solveSpendDownBase(options: Omit<RetSimOpts, "base">): number {
+  if (options.months <= 0 || options.startBalance <= 0) return 0;
+  const finalBalanceFor = (base: number) =>
+    simulateRetirement({ ...options, base }).finalBalance;
 
-  let lo = 0;
-  let hi = Math.max(1, o.startBalance / o.months);
-  let guard = 0;
-  while (finalFor(hi) > 1 && guard++ < 100) hi *= 2;
+  let low = 0;
+  let high = Math.max(1, options.startBalance / options.months);
+  let expansions = 0;
+  while (
+    finalBalanceFor(high) > DEPLETION_TOLERANCE_EUR &&
+    expansions++ < EXPANSION_GUARD_LIMIT
+  )
+    high *= 2;
 
-  for (let i = 0; i < 80; i++) {
-    const mid = (lo + hi) / 2;
-    if (finalFor(mid) > 0.5) lo = mid;
-    else hi = mid;
+  for (let iteration = 0; iteration < BISECTION_ITERATIONS; iteration++) {
+    const mid = (low + high) / 2;
+    if (finalBalanceFor(mid) > DEPLETION_TOLERANCE_EUR) low = mid;
+    else high = mid;
   }
-  return (lo + hi) / 2;
+  return (low + high) / 2;
 }
 
+// A stored phase missing its `years` falls back to this (a sensible phase length).
+const PHASE_FALLBACK_YEARS = 5;
+
+/** A clean-slate calculation ("New"), and the single source of `normalizeInput`'s
+ *  fallbacks — so the defaults can't drift between the two. */
+export const EMPTY_INPUT: InvestingInput = {
+  startingBalance: 0,
+  annualReturnPct: 7,
+  currentAge: 30,
+  retirementAge: 65,
+  lifeExpectancy: 90,
+  phases: [{ id: "phase-new", years: 10, monthlyContribution: 100 }],
+  retirement: {
+    enabled: false,
+    mode: "fixed",
+    basis: "net",
+    monthlyWithdrawal: 1500,
+    annualReturnPct: 4,
+    capitalGainsTaxPct: 30,
+    usePresumedCost: true,
+    kansanelake: 0,
+    kansanelakeTaxPct: 0,
+    kansanelakeStartAge: 65,
+  },
+  inflationPct: 0,
+};
+
+/** The worked example shown on first visit and on "Reset to example". */
+export const DEFAULT_INPUT: InvestingInput = {
+  startingBalance: 10000,
+  annualReturnPct: 7,
+  currentAge: 30,
+  retirementAge: 60,
+  lifeExpectancy: 90,
+  phases: [
+    { id: "phase-a", years: 1, monthlyContribution: 100 },
+    { id: "phase-b", years: 4, monthlyContribution: 250 },
+    { id: "phase-c", years: 25, monthlyContribution: 400 },
+  ],
+  retirement: {
+    enabled: true,
+    mode: "fixed",
+    basis: "net",
+    monthlyWithdrawal: 2500,
+    annualReturnPct: 5,
+    capitalGainsTaxPct: 30,
+    usePresumedCost: true,
+    kansanelake: 0,
+    kansanelakeTaxPct: 0,
+    kansanelakeStartAge: 65,
+  },
+  inflationPct: 0,
+};
+
 /** Fill in any missing/invalid fields — used when loading saved or older data. */
-export function normalizeInput(p: Partial<InvestingInput> | null | undefined): InvestingInput {
-  const src = p ?? {};
-  const phases = Array.isArray(src.phases) && src.phases.length > 0
-    ? src.phases
-    : [{ id: "phase-1", years: 10, monthlyContribution: 100 }];
+export function normalizeInput(
+  partial: Partial<InvestingInput> | null | undefined,
+): InvestingInput {
+  const source = partial ?? {};
+  const retirementDefaults = EMPTY_INPUT.retirement;
+  const phases =
+    Array.isArray(source.phases) && source.phases.length > 0
+      ? source.phases
+      : EMPTY_INPUT.phases;
   return {
-    startingBalance: numOr(src.startingBalance, 0),
-    annualReturnPct: numOr(src.annualReturnPct, 7),
-    currentAge: numOr(src.currentAge, 30),
-    retirementAge: numOr(src.retirementAge, 65),
-    lifeExpectancy: numOr(src.lifeExpectancy, 90),
-    phases: phases.map((ph, i) => ({
-      id: typeof ph?.id === "string" ? ph.id : `phase-${i + 1}`,
-      years: numOr(ph?.years, 5),
-      monthlyContribution: numOr(ph?.monthlyContribution, 0),
+    startingBalance: numOr(source.startingBalance, EMPTY_INPUT.startingBalance),
+    annualReturnPct: numOr(source.annualReturnPct, EMPTY_INPUT.annualReturnPct),
+    currentAge: numOr(source.currentAge, EMPTY_INPUT.currentAge),
+    retirementAge: numOr(source.retirementAge, EMPTY_INPUT.retirementAge),
+    lifeExpectancy: numOr(source.lifeExpectancy, EMPTY_INPUT.lifeExpectancy),
+    phases: phases.map((phase, index) => ({
+      id: typeof phase?.id === "string" ? phase.id : `phase-${index + 1}`,
+      years: numOr(phase?.years, PHASE_FALLBACK_YEARS),
+      monthlyContribution: numOr(phase?.monthlyContribution, 0),
     })),
     retirement: {
-      enabled: Boolean(src.retirement?.enabled),
-      mode: src.retirement?.mode === "spendDown" ? "spendDown" : "fixed",
-      basis: src.retirement?.basis === "gross" ? "gross" : "net",
-      monthlyWithdrawal: numOr(src.retirement?.monthlyWithdrawal, 1500),
-      annualReturnPct: numOr(src.retirement?.annualReturnPct, 4),
-      capitalGainsTaxPct: numOr(src.retirement?.capitalGainsTaxPct, 30),
-      usePresumedCost: src.retirement?.usePresumedCost !== false,
-      kansanelake: numOr(src.retirement?.kansanelake, 0),
-      kansanelakeTaxPct: numOr(src.retirement?.kansanelakeTaxPct, 0),
-      kansanelakeStartAge: numOr(src.retirement?.kansanelakeStartAge, 65),
+      enabled: Boolean(source.retirement?.enabled),
+      mode: source.retirement?.mode === "spendDown" ? "spendDown" : "fixed",
+      basis: source.retirement?.basis === "gross" ? "gross" : "net",
+      monthlyWithdrawal: numOr(
+        source.retirement?.monthlyWithdrawal,
+        retirementDefaults.monthlyWithdrawal,
+      ),
+      annualReturnPct: numOr(
+        source.retirement?.annualReturnPct,
+        retirementDefaults.annualReturnPct,
+      ),
+      capitalGainsTaxPct: numOr(
+        source.retirement?.capitalGainsTaxPct,
+        retirementDefaults.capitalGainsTaxPct,
+      ),
+      usePresumedCost: source.retirement?.usePresumedCost !== false,
+      kansanelake: numOr(source.retirement?.kansanelake, retirementDefaults.kansanelake),
+      kansanelakeTaxPct: numOr(
+        source.retirement?.kansanelakeTaxPct,
+        retirementDefaults.kansanelakeTaxPct,
+      ),
+      kansanelakeStartAge: numOr(
+        source.retirement?.kansanelakeStartAge,
+        retirementDefaults.kansanelakeStartAge,
+      ),
     },
-    inflationPct: numOr(src.inflationPct, 0),
+    inflationPct: numOr(source.inflationPct, EMPTY_INPUT.inflationPct),
   };
 }
 
@@ -436,6 +526,16 @@ export function calculateProjection(input: InvestingInput): InvestingResult {
   const totalYears = accumulationYears + retirementYears;
   const depletionYear =
     sim.depletionMonth === null ? null : sim.depletionMonth / 12;
+  const depletionIntoRetirement =
+    depletionYear === null ? 0 : Math.max(0, depletionYear - accumulationYears);
+
+  // Phase coverage: earlier phases have explicit durations; the last fills what's
+  // left up to retirement (0 if the earlier phases already overrun it).
+  const nonLastPhaseYears = input.phases
+    .slice(0, -1)
+    .reduce((sum, phase) => sum + Math.max(0, Math.floor(num(phase.years))), 0);
+  const lastPhaseYears = Math.max(0, accumulationYears - nonLastPhaseYears);
+  const phasesOverflow = nonLastPhaseYears > accumulationYears;
 
   // ---- Kansaneläke (state pension): external income, additive only ----
   // The entered amount is the monthly net-of-its-own-tax base when the pension
@@ -473,6 +573,8 @@ export function calculateProjection(input: InvestingInput): InvestingResult {
     accumulationYears,
     retirementYears,
     totalYears,
+    lastPhaseYears,
+    phasesOverflow,
     startingBalance,
     endOfAccumulationBalance,
     finalBalance: sim.finalBalance,
@@ -495,6 +597,7 @@ export function calculateProjection(input: InvestingInput): InvestingResult {
     monthlyTotalIncomeWithPension,
     depletionYear,
     depletionAge: depletionYear === null ? null : currentAge + depletionYear,
+    depletionIntoRetirement,
     realFinalBalance: sim.finalBalance / realFactor(totalYears),
   };
 }
