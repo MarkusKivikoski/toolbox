@@ -10,21 +10,21 @@ import type {
 
 export type Cell = string | number;
 
-const round2 = (n: number): number =>
-  Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+const round2 = (value: number): number =>
+  Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
 
-const modeLabel = (m: InvestingInput["retirement"]["mode"]): string =>
-  m === "spendDown" ? "Spend it all" : "Fixed amount";
+const modeLabel = (mode: InvestingInput["retirement"]["mode"]): string =>
+  mode === "spendDown" ? "Spend it all" : "Fixed amount";
 
-const basisLabel = (b: InvestingInput["retirement"]["basis"]): string =>
-  b === "gross" ? "Gross (pre-tax)" : "Net (after tax)";
+const basisLabel = (basis: InvestingInput["retirement"]["basis"]): string =>
+  basis === "gross" ? "Gross (pre-tax)" : "Net (after tax)";
 
 const phaseDuration = (phase: ContributionPhase, isLast: boolean): Cell =>
   isLast ? "until retirement" : Math.max(0, Math.round(phase.years));
 
 /** Inputs / assumptions, as label–value rows (with a small phases sub-table). */
 export function buildInputRows(input: InvestingInput): Cell[][] {
-  const r = input.retirement;
+  const retirement = input.retirement;
   const rows: Cell[][] = [
     ["Starting balance (€)", round2(input.startingBalance)],
     ["Expected yearly return (%)", input.annualReturnPct],
@@ -35,33 +35,33 @@ export function buildInputRows(input: InvestingInput): Cell[][] {
     [],
     ["Contribution phases"],
     ["Phase", "Monthly (€)", "Duration"],
-    ...input.phases.map((p, i): Cell[] => [
-      `Phase ${i + 1}`,
-      round2(p.monthlyContribution),
-      phaseDuration(p, i === input.phases.length - 1),
+    ...input.phases.map((phase, index): Cell[] => [
+      `Phase ${index + 1}`,
+      round2(phase.monthlyContribution),
+      phaseDuration(phase, index === input.phases.length - 1),
     ]),
     [],
-    ["Retirement drawdown", r.enabled ? "enabled" : "disabled"],
+    ["Retirement drawdown", retirement.enabled ? "enabled" : "disabled"],
   ];
 
-  if (r.enabled) {
+  if (retirement.enabled) {
     rows.push(
-      ["Withdrawal mode", modeLabel(r.mode)],
-      ["Amount basis", basisLabel(r.basis)]
+      ["Withdrawal mode", modeLabel(retirement.mode)],
+      ["Amount basis", basisLabel(retirement.basis)]
     );
-    if (r.mode === "fixed") {
-      rows.push(["Monthly withdrawal (€)", round2(r.monthlyWithdrawal)]);
+    if (retirement.mode === "fixed") {
+      rows.push(["Monthly withdrawal (€)", round2(retirement.monthlyWithdrawal)]);
     }
     rows.push(
-      ["Return while retired (%)", r.annualReturnPct],
-      ["Capital gains tax (%)", r.capitalGainsTaxPct],
-      ["Hankintameno-olettama", r.usePresumedCost ? "applied" : "off"]
+      ["Return while retired (%)", retirement.annualReturnPct],
+      ["Capital gains tax (%)", retirement.capitalGainsTaxPct],
+      ["Hankintameno-olettama", retirement.usePresumedCost ? "applied" : "off"]
     );
-    if (r.kansanelake > 0) {
+    if (retirement.kansanelake > 0) {
       rows.push(
-        ["Kansaneläke gross / month (€)", round2(r.kansanelake)],
-        ["Pension tax (%)", r.kansanelakeTaxPct],
-        ["Pension starts at age", r.kansanelakeStartAge]
+        ["Kansaneläke gross / month (€)", round2(retirement.kansanelake)],
+        ["Pension tax (%)", retirement.kansanelakeTaxPct],
+        ["Pension starts at age", retirement.kansanelakeStartAge]
       );
     }
   }
@@ -130,13 +130,13 @@ export function buildProjectionRows(result: InvestingResult): Cell[][] {
     "Balance (€)",
     "Today's money (€)",
   ];
-  const data: Cell[][] = result.points.map((p) => [
-    p.age,
-    p.year,
-    p.stage === "retirement" ? "Retired" : "Saving",
-    round2(p.contributed),
-    round2(p.balance),
-    round2(p.realBalance),
+  const data: Cell[][] = result.points.map((point) => [
+    point.age,
+    point.year,
+    point.stage === "retirement" ? "Retired" : "Saving",
+    round2(point.contributed),
+    round2(point.balance),
+    round2(point.realBalance),
   ]);
   return [header, ...data];
 }

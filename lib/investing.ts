@@ -137,11 +137,11 @@ export type InvestingResult = {
 // sale price as presumed cost, so at most 60% of the sale is taxable gain.
 const PRESUMED_TAXABLE_RATE = 0.6;
 
-const num = (v: number): number => (Number.isFinite(v) ? v : 0);
+const num = (value: number): number => (Number.isFinite(value) ? value : 0);
 
-const numOr = (v: unknown, fallback: number): number => {
-  const n = typeof v === "number" ? v : parseFloat(String(v));
-  return Number.isFinite(n) ? n : fallback;
+const numOr = (value: unknown, fallback: number): number => {
+  const parsed = typeof value === "number" ? value : parseFloat(String(value));
+  return Number.isFinite(parsed) ? parsed : fallback;
 };
 
 /** Convert a yearly percentage into the equivalent monthly growth factor. */
@@ -186,9 +186,9 @@ type RetSim = {
  * tax is `taxRate` on that gain (optionally capped by the presumed-cost rule).
  * In "net" mode the sale is grossed up so the after-tax amount equals the target.
  */
-function simulateRetirement(o: RetSimOpts): RetSim {
-  let balance = o.startBalance;
-  let costBasis = o.startCostBasis;
+function simulateRetirement(options: RetSimOpts): RetSim {
+  let balance = options.startBalance;
+  let costBasis = options.startCostBasis;
   let totalGross = 0;
   let totalNet = 0;
   let totalTax = 0;
@@ -199,19 +199,20 @@ function simulateRetirement(o: RetSimOpts): RetSim {
   let firstMonthGross = 0;
   let lastYearNet = 0;
   let lastYearGross = 0;
-  const years = Math.ceil(o.months / 12);
+  const years = Math.ceil(options.months / 12);
 
-  for (let j = 0; j < o.months; j++) {
-    const yearIndex = Math.floor(j / 12);
-    const stepped = o.base * Math.pow(1 + o.inflation, yearIndex);
-    const grown = balance * (1 + o.retRate);
-    const gainFrac = grown > 0 ? Math.max(0, (grown - costBasis) / grown) : 0;
-    const taxableRate = o.usePresumed
-      ? Math.min(gainFrac, PRESUMED_TAXABLE_RATE)
-      : gainFrac;
-    const taxPerGross = o.taxRate * taxableRate; // tax as a fraction of the sale
+  for (let monthIndex = 0; monthIndex < options.months; monthIndex++) {
+    const yearIndex = Math.floor(monthIndex / 12);
+    const stepped = options.base * Math.pow(1 + options.inflation, yearIndex);
+    const grown = balance * (1 + options.retRate);
+    const gainFraction =
+      grown > 0 ? Math.max(0, (grown - costBasis) / grown) : 0;
+    const taxableRate = options.usePresumed
+      ? Math.min(gainFraction, PRESUMED_TAXABLE_RATE)
+      : gainFraction;
+    const taxPerGross = options.taxRate * taxableRate; // tax as a fraction of the sale
 
-    let gross = o.isNet
+    let gross = options.isNet
       ? taxPerGross < 1
         ? stepped / (1 - taxPerGross)
         : Infinity
@@ -228,7 +229,8 @@ function simulateRetirement(o: RetSimOpts): RetSim {
       net = gross - tax;
       balance = 0;
       costBasis = 0;
-      if (depletionMonth === null) depletionMonth = o.accMonths + j + 1;
+      if (depletionMonth === null)
+        depletionMonth = options.accMonths + monthIndex + 1;
     } else {
       tax = gross * taxPerGross;
       net = gross - tax;
@@ -241,16 +243,16 @@ function simulateRetirement(o: RetSimOpts): RetSim {
     totalTax += tax;
     totalNet += net;
 
-    if (j % 12 === 0) yearFirstMonthNets.push(net);
-    if (j === 0) {
+    if (monthIndex % 12 === 0) yearFirstMonthNets.push(net);
+    if (monthIndex === 0) {
       firstMonthNet = net;
       firstMonthGross = gross;
     }
-    if (j === (years - 1) * 12) {
+    if (monthIndex === (years - 1) * 12) {
       lastYearNet = net;
       lastYearGross = gross;
     }
-    if ((j + 1) % 12 === 0) yearEndBalances.push(balance);
+    if ((monthIndex + 1) % 12 === 0) yearEndBalances.push(balance);
   }
 
   return {
@@ -434,15 +436,17 @@ export function calculateProjection(input: InvestingInput): InvestingResult {
   const realFactor = (year: number) =>
     inflation > 0 ? Math.pow(1 + inflation, year) : 1;
 
-  // Monthly contribution for accumulation month `i` (0-based). Earlier phases
+  // Monthly contribution for a 0-based accumulation month. Earlier phases
   // cover their stated years; the last phase fills the rest up to retirement.
   const phases = input.phases;
-  const amountForMonth = (i: number): number => {
+  const amountForMonth = (monthIndex: number): number => {
     if (phases.length === 0) return 0;
-    let cumMonths = 0;
-    for (let p = 0; p < phases.length - 1; p++) {
-      cumMonths += Math.max(0, Math.floor(num(phases[p].years))) * 12;
-      if (i < cumMonths) return num(phases[p].monthlyContribution);
+    let cumulativeMonths = 0;
+    for (let phaseIndex = 0; phaseIndex < phases.length - 1; phaseIndex++) {
+      cumulativeMonths +=
+        Math.max(0, Math.floor(num(phases[phaseIndex].years))) * 12;
+      if (monthIndex < cumulativeMonths)
+        return num(phases[phaseIndex].monthlyContribution);
     }
     return num(phases[phases.length - 1].monthlyContribution);
   };
@@ -464,13 +468,13 @@ export function calculateProjection(input: InvestingInput): InvestingResult {
 
   // ---- Accumulation phase ----
   const accMonths = accumulationYears * 12;
-  for (let i = 0; i < accMonths; i++) {
-    const c = amountForMonth(i);
-    balance = balance * (1 + accRate) + c;
-    contributed += c;
-    totalContributions += c;
-    if ((i + 1) % 12 === 0) {
-      const year = (i + 1) / 12;
+  for (let monthIndex = 0; monthIndex < accMonths; monthIndex++) {
+    const contribution = amountForMonth(monthIndex);
+    balance = balance * (1 + accRate) + contribution;
+    contributed += contribution;
+    totalContributions += contribution;
+    if ((monthIndex + 1) % 12 === 0) {
+      const year = (monthIndex + 1) / 12;
       points.push({
         year,
         age: currentAge + year,
@@ -489,37 +493,37 @@ export function calculateProjection(input: InvestingInput): InvestingResult {
   const costBasisAtRetirement = startingBalance + totalContributions;
 
   // ---- Retirement phase ----
-  const ret = input.retirement;
-  const isNet = ret.basis === "net";
+  const retirement = input.retirement;
+  const isNet = retirement.basis === "net";
   const simBase: Omit<RetSimOpts, "base"> = {
     startBalance: endOfAccumulationBalance,
     startCostBasis: costBasisAtRetirement,
-    retRate: monthlyRate(ret.annualReturnPct),
+    retRate: monthlyRate(retirement.annualReturnPct),
     months: retirementYears * 12,
     inflation,
     isNet,
-    taxRate: Math.max(0, num(ret.capitalGainsTaxPct)) / 100,
-    usePresumed: ret.usePresumedCost,
+    taxRate: Math.max(0, num(retirement.capitalGainsTaxPct)) / 100,
+    usePresumed: retirement.usePresumedCost,
     accMonths,
   };
 
   const base =
-    ret.mode === "spendDown"
+    retirement.mode === "spendDown"
       ? solveSpendDownBase(simBase)
-      : Math.max(0, num(ret.monthlyWithdrawal));
+      : Math.max(0, num(retirement.monthlyWithdrawal));
   const sim = simulateRetirement({ ...simBase, base });
 
   // Retirement year points.
-  for (let k = 0; k < sim.yearEndBalances.length; k++) {
-    const year = accumulationYears + k + 1;
-    const bal = sim.yearEndBalances[k];
+  for (let yearIndex = 0; yearIndex < sim.yearEndBalances.length; yearIndex++) {
+    const year = accumulationYears + yearIndex + 1;
+    const yearEndBalance = sim.yearEndBalances[yearIndex];
     points.push({
       year,
       age: currentAge + year,
       stage: "retirement",
-      balance: bal,
+      balance: yearEndBalance,
       contributed,
-      realBalance: bal / realFactor(year),
+      realBalance: yearEndBalance / realFactor(year),
     });
   }
 
@@ -541,19 +545,21 @@ export function calculateProjection(input: InvestingInput): InvestingResult {
   // The entered amount is the monthly net-of-its-own-tax base when the pension
   // starts; it rises with inflation from there. It never touches the portfolio.
   const pensionNetAtStart =
-    Math.max(0, num(ret.kansanelake)) *
-    (1 - Math.max(0, num(ret.kansanelakeTaxPct)) / 100);
+    Math.max(0, num(retirement.kansanelake)) *
+    (1 - Math.max(0, num(retirement.kansanelakeTaxPct)) / 100);
   const pensionStartYearIndex = Math.max(
     0,
-    Math.floor(num(ret.kansanelakeStartAge) - retirementAge)
+    Math.floor(num(retirement.kansanelakeStartAge) - retirementAge)
   );
-  const pensionNetForYear = (r: number): number =>
-    r >= pensionStartYearIndex
-      ? pensionNetAtStart * Math.pow(1 + inflation, r - pensionStartYearIndex)
+  const pensionNetForYear = (retirementYear: number): number =>
+    retirementYear >= pensionStartYearIndex
+      ? pensionNetAtStart *
+        Math.pow(1 + inflation, retirementYear - pensionStartYearIndex)
       : 0;
 
   let totalPensionNet = 0;
-  for (let r = 0; r < retirementYears; r++) totalPensionNet += pensionNetForYear(r) * 12;
+  for (let retirementYear = 0; retirementYear < retirementYears; retirementYear++)
+    totalPensionNet += pensionNetForYear(retirementYear) * 12;
   const pensionFirst = retirementYears > 0 ? pensionNetForYear(0) : 0;
   const pensionLast =
     retirementYears > 0 ? pensionNetForYear(retirementYears - 1) : 0;
@@ -583,13 +589,13 @@ export function calculateProjection(input: InvestingInput): InvestingResult {
     totalWithdrawn: sim.totalGross,
     totalNet: sim.totalNet,
     totalTax: sim.totalTax,
-    withdrawalMode: ret.mode,
-    withdrawalBasis: ret.basis,
+    withdrawalMode: retirement.mode,
+    withdrawalBasis: retirement.basis,
     firstMonthlyNet: sim.firstMonthNet,
     firstMonthlyGross: sim.firstMonthGross,
     lastMonthlyNet: sim.lastYearNet,
     lastMonthlyGross: sim.lastYearGross,
-    pensionStartAge: num(ret.kansanelakeStartAge),
+    pensionStartAge: num(retirement.kansanelakeStartAge),
     pensionNetMonthly: pensionNetAtStart,
     totalPensionNet,
     firstMonthlyTotalNet: sim.firstMonthNet + pensionFirst,

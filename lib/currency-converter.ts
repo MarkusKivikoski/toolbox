@@ -6,6 +6,8 @@
 // derived client-side (rate A→B = eurRate(B) / eurRate(A)), so one cached
 // snapshot serves any base currency the user picks without refetching.
 
+import { formatAmountInput } from "./utils";
+
 export const CANONICAL_BASE_CURRENCY = "EUR";
 
 export const FRANKFURTER_RATES_URL = "https://api.frankfurter.dev/v2/rates";
@@ -173,10 +175,13 @@ export function normalizeConverterSettings(
 
   return {
     baseCurrency,
-    amount:
+    // Re-grouped on every load so amounts saved before thousands-grouping
+    // shipped (or edited elsewhere) still render with spaces.
+    amount: formatAmountInput(
       typeof source.amount === "string"
         ? source.amount
         : DEFAULT_CONVERTER_SETTINGS.amount,
+    ),
     targetCurrencies,
   };
 }

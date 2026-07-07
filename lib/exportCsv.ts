@@ -13,14 +13,15 @@ const fiNumber = new Intl.NumberFormat("fi-FI", {
   maximumFractionDigits: 2,
 });
 
-function cell(v: Cell): string {
-  if (typeof v === "number") return Number.isFinite(v) ? fiNumber.format(v) : "";
-  if (/[;"\r\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
-  return v;
+function cell(value: Cell): string {
+  if (typeof value === "number")
+    return Number.isFinite(value) ? fiNumber.format(value) : "";
+  if (/[;"\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
 }
 
 const rowsToCsv = (rows: Cell[][]): string =>
-  rows.map((r) => r.map(cell).join(";")).join("\r\n");
+  rows.map((row) => row.map(cell).join(";")).join("\r\n");
 
 /** Build a single semicolon-delimited, UTF-8-BOM CSV with all sections stacked. */
 export function toCsv(result: InvestingResult, input: InvestingInput): string {

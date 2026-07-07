@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useLocalStorageState } from "@/hooks/useLocalStorageState";
 import { normalizeInput, type InvestingInput } from "@/lib/investing";
+import { SAVED_STORAGE_KEY } from "../constants";
 
 export type SavedCalc = {
   id: string;
@@ -10,8 +11,6 @@ export type SavedCalc = {
   input: InvestingInput;
   updatedAt: number;
 };
-
-const KEY = "toolbox.investing-calculator.saved.v1";
 
 type Store = { calcs: SavedCalc[]; activeId: string | null };
 
@@ -30,11 +29,7 @@ function normalizeStore(stored: unknown): Store {
   };
 }
 
-const clone = (input: InvestingInput): InvestingInput =>
-  JSON.parse(JSON.stringify(input));
-
-const newId = () =>
-  `calc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+const clone = (input: InvestingInput): InvestingInput => structuredClone(input);
 
 export default function SavedCalculations({
   current,
@@ -46,7 +41,7 @@ export default function SavedCalculations({
   defaultInput: InvestingInput;
 }) {
   const { value: store, setValue: setStore } = useLocalStorageState({
-    storageKey: KEY,
+    storageKey: SAVED_STORAGE_KEY,
     defaultValue: EMPTY_STORE,
     normalize: normalizeStore,
   });
@@ -74,7 +69,7 @@ export default function SavedCalculations({
         ),
       }));
     } else {
-      const id = newId();
+      const id = crypto.randomUUID();
       setStore((previous) => ({
         calcs: [
           ...previous.calcs,
@@ -87,7 +82,7 @@ export default function SavedCalculations({
   }
 
   function saveAsCopy() {
-    const id = newId();
+    const id = crypto.randomUUID();
     const copyName = trimmed ? `${trimmed} (copy)` : "Untitled";
     setStore((previous) => ({
       calcs: [
@@ -139,11 +134,11 @@ export default function SavedCalculations({
 
       {calcs.length > 0 ? (
         <div className="-mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-1">
-          {calcs.map((c) => {
-            const isActive = c.id === activeId;
+          {calcs.map((calc) => {
+            const isActive = calc.id === activeId;
             return (
               <div
-                key={c.id}
+                key={calc.id}
                 className={`flex flex-shrink-0 items-center gap-1 rounded-full border py-1 pl-3 pr-1 text-sm transition-colors ${
                   isActive
                     ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
@@ -152,11 +147,11 @@ export default function SavedCalculations({
               >
                 <button
                   type="button"
-                  onClick={() => load(c)}
+                  onClick={() => load(calc)}
                   className="max-w-[12rem] truncate font-medium"
-                  title={c.name}
+                  title={calc.name}
                 >
-                  {c.name}
+                  {calc.name}
                   {isActive && dirty && (
                     <span className="ml-1 text-amber-500" title="Unsaved changes">
                       •
@@ -165,8 +160,8 @@ export default function SavedCalculations({
                 </button>
                 <button
                   type="button"
-                  onClick={() => remove(c)}
-                  aria-label={`Delete ${c.name}`}
+                  onClick={() => remove(calc)}
+                  aria-label={`Delete ${calc.name}`}
                   className="flex h-6 w-6 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-black/5 hover:text-red-500 dark:hover:bg-white/10"
                 >
                   <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
