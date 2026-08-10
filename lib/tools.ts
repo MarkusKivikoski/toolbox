@@ -63,4 +63,13 @@ export const tools: Tool[] = [
     href: "/tools/tax-bracket-visualizer",
     status: "live",
   },
+  {
+    slug: "party-guest-list",
+    name: "Party Guest List",
+    description:
+      "Build a guest list with RSVP and door check-in ticks — drag a name sideways to make them someone's plus-one.",
+    emoji: "🎉",
+    href: "/tools/party-guest-list",
+    status: "live",
+  },
 ];

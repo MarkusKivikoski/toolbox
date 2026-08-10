@@ -62,6 +62,10 @@ export function editAmountInput(rawValue: string, cursorPosition: number): Forma
   };
 }
 
+/** Uppercase just the first character, leaving the rest as typed. */
+export const capitalizeFirst = (value: string) =>
+  value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
+
 /** The date as "YYYY-MM-DD" (the ISO date portion) — for timestamped filenames. */
 export function dateStamp(date: Date = new Date()): string {
   return date.toISOString().slice(0, 10);

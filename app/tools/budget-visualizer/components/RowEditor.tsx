@@ -4,7 +4,7 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import type { BudgetRow } from "@/lib/budget";
-import { capitalizeFirst } from "../utils";
+import { capitalizeFirst } from "@/lib/utils";
 
 type Props = {
   row: BudgetRow;

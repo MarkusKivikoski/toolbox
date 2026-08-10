@@ -4,10 +4,6 @@
 /** A fresh unique id for a newly added income/section row. */
 export const newRowId = () => crypto.randomUUID();
 
-/** Uppercase just the first character, leaving the rest as typed. */
-export const capitalizeFirst = (value: string) =>
-  value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
-
 /** A "Mon YYYY" label for a date this many whole months from today. */
 export const dateInMonths = (months: number) => {
   const date = new Date();

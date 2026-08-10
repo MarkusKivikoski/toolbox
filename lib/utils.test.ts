@@ -1,5 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { dateStamp, editAmountInput, formatAmountInput, parseAmount } from "@/lib/utils";
+import {
+  capitalizeFirst,
+  dateStamp,
+  editAmountInput,
+  formatAmountInput,
+  parseAmount,
+} from "@/lib/utils";
+
+describe("capitalizeFirst", () => {
+  it("uppercases the first character and leaves the rest as typed", () => {
+    expect(capitalizeFirst("anna mcDonald")).toBe("Anna mcDonald");
+  });
+
+  it("passes an empty string through", () => {
+    expect(capitalizeFirst("")).toBe("");
+  });
+});
 
 describe("parseAmount", () => {
   it("tolerates spaces and comma decimals", () => {
