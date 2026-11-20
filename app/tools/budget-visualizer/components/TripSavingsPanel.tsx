@@ -1,7 +1,11 @@
 import type { TripHeadline, TripSavings } from "@/lib/budget";
 import { formatDuration, formatEur, formatPercent } from "@/lib/format";
 import { dateInMonths } from "../utils";
-import { MIN_VISIBLE_PROGRESS_PCT } from "../constants";
+import {
+  FINNISH_DURATION_UNITS,
+  MIN_VISIBLE_PROGRESS_PCT,
+  PERCENT_LOCALE,
+} from "../constants";
 
 type Props = {
   proj: TripSavings;
@@ -22,7 +26,7 @@ export default function TripSavingsPanel({
       <div className="flex items-end justify-between gap-3">
         <div>
           <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-            Saving up for the trip
+            Säästö matkaa varten
           </div>
           <div className="mt-0.5 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
             {formatEur(headline.value)}
@@ -39,11 +43,11 @@ export default function TripSavingsPanel({
             <div className="text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
               {formatEur(proj.balance)}{" "}
               <span className="font-normal text-zinc-400">
-                of {formatEur(proj.target)}
+                / {formatEur(proj.target)}
               </span>
             </div>
             <div className="text-xs text-zinc-400">
-              {formatPercent(proj.progress)} saved
+              {formatPercent(proj.progress, { locale: PERCENT_LOCALE })} säästetty
             </div>
           </div>
         )}
@@ -66,37 +70,40 @@ export default function TripSavingsPanel({
       <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50/60 px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-950/40">
         {proj.reached ? (
           <span className="font-medium text-emerald-700 dark:text-emerald-400">
-            🎉 You&apos;ve saved enough for this trip!
+            🎉 Olet säästänyt tarpeeksi tähän matkaan!
           </span>
         ) : proj.target <= 0 ? (
           <span className="text-zinc-500">
-            Add some trip costs to set your savings goal.
+            Lisää matkan kuluja asettaaksesi säästötavoitteen.
           </span>
         ) : proj.requiredPerMonth !== null ? (
           <span className="text-zinc-700 dark:text-zinc-200">
-            Save{" "}
+            Säästä{" "}
             <span className="font-semibold">
-              {formatEur(proj.requiredPerMonth)}/mo
+              {formatEur(proj.requiredPerMonth)}/kk
             </span>{" "}
-            to have <span className="font-semibold">{formatEur(proj.target)}</span>{" "}
-            ready in{" "}
-            <span className="font-semibold">{formatDuration(monthsUntil / 12)}</span>{" "}
-            (~{dateInMonths(monthsUntil)}).
+            saadaksesi{" "}
+            <span className="font-semibold">{formatEur(proj.target)}</span>{" "}
+            kasaan{" "}
+            <span className="font-semibold">
+              {formatDuration(monthsUntil / 12, FINNISH_DURATION_UNITS)}
+            </span>{" "}
+            kuluessa (~{dateInMonths(monthsUntil)}).
             {perMonth > 0 &&
               (proj.onTrack ? (
                 <>
                   {" "}
-                  You&apos;re saving {formatEur(perMonth)}/mo —{" "}
+                  Säästät {formatEur(perMonth)}/kk —{" "}
                   <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-                    on track ✓
+                    tavoitteessa ✓
                   </span>
                 </>
               ) : (
                 <>
                   {" "}
-                  You&apos;re saving {formatEur(perMonth)}/mo —{" "}
+                  Säästät {formatEur(perMonth)}/kk —{" "}
                   <span className="font-semibold text-amber-700 dark:text-amber-400">
-                    {formatEur(proj.requiredPerMonth - perMonth)}/mo short
+                    {formatEur(proj.requiredPerMonth - perMonth)}/kk vajaa
                   </span>
                   .
                 </>
@@ -104,18 +111,18 @@ export default function TripSavingsPanel({
           </span>
         ) : proj.monthsToAfford !== null ? (
           <span className="text-zinc-700 dark:text-zinc-200">
-            At <span className="font-semibold">{formatEur(perMonth)}/mo</span>{" "}
-            you&apos;ll have{" "}
-            <span className="font-semibold">{formatEur(proj.target)}</span> saved in{" "}
+            Summalla <span className="font-semibold">{formatEur(perMonth)}/kk</span>{" "}
+            sinulla on{" "}
+            <span className="font-semibold">{formatEur(proj.target)}</span> säästössä{" "}
             <span className="font-semibold">
-              {formatDuration(proj.monthsToAfford / 12)}
+              {formatDuration(proj.monthsToAfford / 12, FINNISH_DURATION_UNITS)}
             </span>{" "}
-            (~{dateInMonths(proj.monthsToAfford)}).
+            kuluttua (~{dateInMonths(proj.monthsToAfford)}).
           </span>
         ) : (
           <span className="text-zinc-500">
-            Enter how much you can save each month — or when the trip is — to see a
-            plan.
+            Syötä, kuinka paljon voit säästää kuukaudessa — tai milloin matka on —
+            nähdäksesi suunnitelman.
           </span>
         )}
       </div>

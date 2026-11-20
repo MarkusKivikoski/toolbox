@@ -6,6 +6,8 @@ import {
   computeStatusPill,
   computeTripHeadline,
   blankPlan,
+  clearPaid,
+  normalizeState,
   REMAINDER_ID,
   type BudgetRow,
 } from "@/lib/budget";
@@ -141,7 +143,7 @@ describe("computeStatusPill", () => {
       savingsEnabled: true,
     });
     expect(pill.tone).toBe("emerald");
-    expect(pill.text).toMatch(/savings/i);
+    expect(pill.text).toMatch(/säästöön/i);
   });
 
   it("shows the total trip cost when no trip budget is set", () => {
@@ -154,7 +156,7 @@ describe("computeStatusPill", () => {
       savingsEnabled: false,
     });
     expect(pill.tone).toBe("zinc");
-    expect(pill.text).toMatch(/trip cost/i);
+    expect(pill.text).toMatch(/matkan hinta/i);
   });
 });
 
@@ -163,21 +165,21 @@ describe("computeTripHeadline", () => {
     const trip = computeTripSavings(1600, "1600", "0", "");
     const headline = computeTripHeadline(trip, 0);
     expect(headline.value).toBe(1600);
-    expect(headline.label).toMatch(/all set/i);
+    expect(headline.label).toMatch(/valmis/i);
   });
 
   it("leads with the required monthly amount when a deadline is set", () => {
     const trip = computeTripSavings(1600, "100", "0", "5");
     const headline = computeTripHeadline(trip, 0);
     expect(headline.value).toBeCloseTo(300);
-    expect(headline.unit).toBe(" /mo");
+    expect(headline.unit).toBe(" /kk");
   });
 
   it("falls back to the plain trip total with no pace or deadline", () => {
     const trip = computeTripSavings(1600, "0", "", "");
     const headline = computeTripHeadline(trip, 0);
     expect(headline.value).toBe(1600);
-    expect(headline.label).toMatch(/total trip cost/i);
+    expect(headline.label).toMatch(/matkan hinta yhteensä/i);
   });
 });
 
@@ -190,7 +192,68 @@ describe("blankPlan", () => {
   });
 
   it("seeds the trip budget row name in trip mode", () => {
-    expect(blankPlan("trip").incomes[0].name).toBe("Trip budget");
+    expect(blankPlan("trip").incomes[0].name).toBe("Matkabudjetti");
     expect(blankPlan("salary").incomes[0].name).toBe("");
+  });
+});
+
+describe("paid tracking", () => {
+  const paidRow = (name: string, amount: string): BudgetRow => ({
+    ...row(name, amount),
+    isPaid: true,
+  });
+
+  it("splits allocated into paid and unpaid", () => {
+    const summary = computeBudget(
+      [row("Salary", "3000")],
+      [paidRow("Rent", "1000"), row("Food", "400"), paidRow("Bus", "50")],
+    );
+    expect(summary.paid).toBe(1050);
+    expect(summary.unpaid).toBe(400);
+    expect(summary.paid + summary.unpaid).toBe(summary.allocated);
+  });
+
+  it("ignores paid sections with no usable amount", () => {
+    const summary = computeBudget([], [paidRow("Empty", ""), row("Rent", "500")]);
+    expect(summary.paid).toBe(0);
+    expect(summary.unpaid).toBe(500);
+  });
+
+  it("carries isPaid onto slices, never onto the remainder", () => {
+    const summary = computeBudget([row("Salary", "2000")], [paidRow("Rent", "1000")]);
+    expect(summary.slices[0].isPaid).toBe(true);
+    expect(summary.slices.find((slice) => slice.id === REMAINDER_ID)?.isPaid).toBe(false);
+  });
+
+  it("clearPaid removes every tick and keeps the rest", () => {
+    const plan = { ...blankPlan("salary"), sections: [paidRow("Rent", "900")] };
+    const cleared = clearPaid(plan);
+    expect(cleared.sections[0].isPaid).toBeUndefined();
+    expect(cleared.sections[0].amount).toBe("900");
+  });
+
+  it("blankPlan has no ticks", () => {
+    expect(blankPlan("salary").sections.some((section) => section.isPaid)).toBe(false);
+  });
+
+  it("normalizeState keeps ticks and backfills old saves without them", () => {
+    const fallback = {
+      mode: "salary" as const,
+      salary: blankPlan("salary"),
+      trip: blankPlan("trip"),
+    };
+    const stored = {
+      mode: "salary",
+      salary: {
+        incomes: [],
+        sections: [
+          { id: "a", name: "Rent", amount: "900", isPaid: true },
+          { id: "b", name: "Food", amount: "300" },
+        ],
+      },
+    };
+    const state = normalizeState(stored, fallback);
+    expect(state.salary.sections[0].isPaid).toBe(true);
+    expect(state.salary.sections[1].isPaid).toBeUndefined();
   });
 });

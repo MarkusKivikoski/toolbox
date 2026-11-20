@@ -2,6 +2,7 @@
 
 import type { BudgetSlice } from "@/lib/budget";
 import { formatEur, formatPercent } from "@/lib/format";
+import { PERCENT_LOCALE } from "../constants";
 
 type Props = {
   slices: BudgetSlice[];
@@ -42,7 +43,7 @@ export default function BudgetDoughnut({
   slices,
   allocated,
   overBudget,
-  totalLabel = "Budgeted / month",
+  totalLabel = "Budjetoitu / kk",
   subLabel = "across all sections",
   activeId,
   onActiveChange,
@@ -64,10 +65,7 @@ export default function BudgetDoughnut({
     };
   });
 
-  const renderRing = (
-    seg: (typeof segments)[number],
-    highlighted: boolean,
-  ) => {
+  const renderRing = (seg: (typeof segments)[number], highlighted: boolean) => {
     const { slice } = seg;
     const themed = slice.color === null;
     return (
@@ -77,7 +75,7 @@ export default function BudgetDoughnut({
         cy={C}
         r={R}
         fill="none"
-        stroke={themed ? undefined : slice.color ?? undefined}
+        stroke={themed ? undefined : (slice.color ?? undefined)}
         className={`cursor-pointer transition-[stroke-width] ${
           themed ? "stroke-zinc-200 dark:stroke-zinc-700" : ""
         }`}
@@ -88,7 +86,9 @@ export default function BudgetDoughnut({
         strokeLinecap="butt"
         onMouseEnter={() => onActiveChange(slice.id)}
         onMouseLeave={() => onActiveChange(null)}
-        onClick={() => onActiveChange(active?.id === slice.id ? null : slice.id)}
+        onClick={() =>
+          onActiveChange(active?.id === slice.id ? null : slice.id)
+        }
       />
     );
   };
@@ -96,7 +96,10 @@ export default function BudgetDoughnut({
   const centerLabel = active ? active.name : totalLabel;
   const centerValue = active ? active.amount : allocated;
   const centerSub = active
-    ? formatPercent(active.fraction, { maximumFractionDigits: CENTER_PERCENT_DIGITS })
+    ? formatPercent(active.fraction, {
+        maximumFractionDigits: CENTER_PERCENT_DIGITS,
+        locale: PERCENT_LOCALE,
+      })
     : subLabel;
 
   // Focused slice reads neutral; the standing total is green within income, red over it.
@@ -112,7 +115,7 @@ export default function BudgetDoughnut({
         viewBox={`0 0 ${SIZE} ${SIZE}`}
         className="block w-full touch-pan-y select-none"
         role="img"
-        aria-label="Budget breakdown doughnut"
+        aria-label="Budjetin jakautuminen donitsina"
       >
         {/* Track behind the slices so the ring always reads as a full circle. */}
         <circle

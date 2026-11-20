@@ -9,7 +9,7 @@ type Props = {
 
 /** Two-tap reset for the active tab's data — arms on the first tap, clears on the second. */
 export default function ResetButton({ mode, confirmReset, onReset }: Props) {
-  const noun = mode === "trip" ? "trip" : "budget";
+  const noun = mode === "trip" ? "matka" : "budjetti";
   return (
     <div className="mt-5 border-t border-zinc-100 pt-4 dark:border-zinc-800">
       <button
@@ -28,7 +28,7 @@ export default function ResetButton({ mode, confirmReset, onReset }: Props) {
             clipRule="evenodd"
           />
         </svg>
-        {confirmReset ? `Tap again to clear this ${noun}` : `Reset ${noun}`}
+        {confirmReset ? `Napauta uudelleen: tyhjennä ${noun}` : `Nollaa ${noun}`}
       </button>
     </div>
   );

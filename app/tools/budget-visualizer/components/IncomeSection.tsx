@@ -35,16 +35,16 @@ export default function IncomeSection({
       <div className="mt-2 space-y-2">
         {incomes.length === 0 && (
           <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-5 text-center text-sm text-zinc-400 dark:border-zinc-700">
-            No income sources yet — add one to start.
+            Ei vielä tulonlähteitä — lisää yksi aloittaaksesi.
           </p>
         )}
         {incomes.map((row, index) => (
           <RowEditor
             key={row.id}
             row={row}
-            ariaPrefix={`Income ${index + 1}`}
-            namePlaceholder="Income source"
-            fallbackNoun="income source"
+            ariaPrefix={`Tulo ${index + 1}`}
+            namePlaceholder="Tulonlähde"
+            fallbackNoun="tulonlähde"
             showDot={false}
             autoFocus={row.id === focusRowId}
             onAutoFocused={onAutoFocused}
@@ -54,10 +54,10 @@ export default function IncomeSection({
           />
         ))}
       </div>
-      <AddButton label="Add income source" onClick={onAdd} />
+      <AddButton label="Lisää tulonlähde" onClick={onAdd} />
       {incomes.length > 1 && (
         <div className="mt-2 flex items-center justify-end gap-2 px-1 text-sm">
-          <span className="text-zinc-500">Total income</span>
+          <span className="text-zinc-500">Tulot yhteensä</span>
           <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
             {formatEur(totalIncome)}
           </span>

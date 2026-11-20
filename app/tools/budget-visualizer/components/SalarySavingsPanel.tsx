@@ -1,7 +1,11 @@
 import type { SavingsProjection } from "@/lib/budget";
 import { formatDuration, formatEur, formatPercent } from "@/lib/format";
 import { dateInMonths } from "../utils";
-import { MIN_VISIBLE_PROGRESS_PCT } from "../constants";
+import {
+  FINNISH_DURATION_UNITS,
+  MIN_VISIBLE_PROGRESS_PCT,
+  PERCENT_LOCALE,
+} from "../constants";
 
 type Props = {
   proj: SavingsProjection;
@@ -14,24 +18,27 @@ export default function SalarySavingsPanel({ proj }: Props) {
       <div className="flex items-end justify-between gap-3">
         <div>
           <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-            Saving each month
+            Säästö kuukaudessa
           </div>
           <div className="mt-0.5 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
             {formatEur(proj.monthly)}
-            <span className="text-base font-medium text-zinc-400"> /mo</span>
+            <span className="text-base font-medium text-zinc-400"> /kk</span>
           </div>
-          <div className="text-xs text-zinc-400">from your unallocated budget</div>
+          <div className="text-xs text-zinc-400">
+            allokoimattomasta budjetista
+          </div>
         </div>
         {proj.target > 0 && (
           <div className="text-right">
             <div className="text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
               {formatEur(proj.balance)}{" "}
               <span className="font-normal text-zinc-400">
-                of {formatEur(proj.target)}
+                / {formatEur(proj.target)}
               </span>
             </div>
             <div className="text-xs text-zinc-400">
-              {formatPercent(proj.progress)} saved
+              {formatPercent(proj.progress, { locale: PERCENT_LOCALE })}{" "}
+              säästetty
             </div>
           </div>
         )}
@@ -54,26 +61,30 @@ export default function SalarySavingsPanel({ proj }: Props) {
       <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50/60 px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-950/40">
         {proj.reached ? (
           <span className="font-medium text-emerald-700 dark:text-emerald-400">
-            🎉 You&apos;ve reached your savings target!
+            🎉 Olet saavuttanut säästötavoitteesi!
           </span>
         ) : proj.target <= 0 ? (
           <span className="text-zinc-500">
-            Set a target to see how long it&apos;ll take to get there.
+            Aseta tavoite nähdäksesi, kuinka kauan siihen menee.
           </span>
         ) : proj.monthsToTarget === null ? (
           <span className="text-amber-700 dark:text-amber-400">
-            No money left over to save — trim your budget to start building toward
-            this goal.
+            Säästettävää ei jää — karsi budjettia aloittaaksesi tavoitteen eteen
+            säästämisen.
           </span>
         ) : (
           <span className="text-zinc-700 dark:text-zinc-200">
-            On track to reach{" "}
-            <span className="font-semibold">{formatEur(proj.target)}</span> in{" "}
+            Tavoite{" "}
+            <span className="font-semibold">{formatEur(proj.target)}</span>{" "}
+            täyttyy{" "}
             <span className="font-semibold">
-              {formatDuration(proj.monthsToTarget / 12)}
+              {formatDuration(proj.monthsToTarget / 12, FINNISH_DURATION_UNITS)}
             </span>{" "}
-            — around{" "}
-            <span className="font-semibold">{dateInMonths(proj.monthsToTarget)}</span>.
+            kuluttua — noin{" "}
+            <span className="font-semibold">
+              {dateInMonths(proj.monthsToTarget)}
+            </span>
+            .
           </span>
         )}
       </div>

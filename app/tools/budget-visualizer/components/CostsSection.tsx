@@ -55,7 +55,7 @@ export default function CostsSection({
             <RowEditor
               key={row.id}
               row={row}
-              ariaPrefix={`Section ${index + 1}`}
+              ariaPrefix={`Osio ${index + 1}`}
               namePlaceholder={
                 index === 0 ? copy.sectionPlaceholder : copy.sectionPlaceholderRest
               }

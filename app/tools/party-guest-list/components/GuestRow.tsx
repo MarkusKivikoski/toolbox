@@ -7,7 +7,7 @@ import type { Guest } from "@/lib/party-guest-list";
 import { COPY } from "../copy";
 import { PLUS_ONE_INDENT_CLASS, ROW_GRID_CLASS } from "../constants";
 import TickBox from "./TickBox";
-import DragHandle from "./DragHandle";
+import DragHandle from "@/components/DragHandle";
 import RemoveButton from "./RemoveButton";
 import type { TickField } from "../hooks/useGuestListActions";
 import type { DragKind } from "../hooks/useGuestDragReorder";

@@ -70,12 +70,19 @@ export function formatPercent(
   return signed && fraction > 0 ? `+${formatted}` : formatted;
 }
 
-/** "3 yr 4 mo" from a fractional number of years. */
-export function formatDuration(years: number): string {
+type DurationUnits = { year: string; month: string };
+
+const ENGLISH_DURATION_UNITS: DurationUnits = { year: "yr", month: "mo" };
+
+/** "3 yr 4 mo" from a fractional number of years (unit labels overridable). */
+export function formatDuration(
+  years: number,
+  units: DurationUnits = ENGLISH_DURATION_UNITS,
+): string {
   const totalMonths = Math.round(years * 12);
   const y = Math.floor(totalMonths / 12);
   const m = totalMonths % 12;
-  if (y > 0 && m > 0) return `${y} yr ${m} mo`;
-  if (y > 0) return `${y} yr`;
-  return `${m} mo`;
+  if (y > 0 && m > 0) return `${y} ${units.year} ${m} ${units.month}`;
+  if (y > 0) return `${y} ${units.year}`;
+  return `${m} ${units.month}`;
 }

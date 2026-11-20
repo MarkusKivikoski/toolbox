@@ -38,9 +38,9 @@ export const tools: Tool[] = [
   },
   {
     slug: "budget-visualizer",
-    name: "Budget Visualizer",
+    name: "Budjettinäkymä",
     description:
-      "Break a monthly budget — or a trip's costs — into a doughnut, with a savings goal that tells you when you'll get there.",
+      "Jaa kuukausibudjetti tai matkan kulut munkkirinkiläksi — säästötavoite kertoo, milloin pääset perille.",
     emoji: "🍩",
     href: "/tools/budget-visualizer",
     status: "live",

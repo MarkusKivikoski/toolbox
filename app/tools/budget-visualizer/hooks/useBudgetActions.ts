@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
   blankPlan,
+  clearPaid,
   type BudgetRow,
   type BudgetState,
   type Mode,
@@ -109,6 +110,19 @@ export function useBudgetActions({
     [setState, setActiveId, setConfirmReset],
   );
 
+  const togglePaid = useCallback(
+    (id: string) =>
+      patchPlan((plan) => ({
+        ...plan,
+        sections: plan.sections.map((row) =>
+          row.id === id ? { ...row, isPaid: row.isPaid !== true } : row,
+        ),
+      })),
+    [patchPlan],
+  );
+
+  const clearAllPaid = useCallback(() => patchPlan(clearPaid), [patchPlan]);
+
   const resetPlan = useCallback(() => {
     setActiveId(null);
     setState((prev) => ({ ...prev, [prev.mode]: blankPlan(prev.mode) }));
@@ -122,6 +136,8 @@ export function useBudgetActions({
     moveSection,
     reorderSections,
     setMode,
+    togglePaid,
+    clearAllPaid,
     resetPlan,
   };
 }

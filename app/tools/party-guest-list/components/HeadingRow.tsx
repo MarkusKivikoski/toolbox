@@ -6,7 +6,7 @@ import type {
 import type { Heading } from "@/lib/party-guest-list";
 import { COPY } from "../copy";
 import { HEADING_TITLE_SPAN_CLASS, ROW_GRID_CLASS } from "../constants";
-import DragHandle from "./DragHandle";
+import DragHandle from "@/components/DragHandle";
 import RemoveButton from "./RemoveButton";
 import type { DragKind } from "../hooks/useGuestDragReorder";
 

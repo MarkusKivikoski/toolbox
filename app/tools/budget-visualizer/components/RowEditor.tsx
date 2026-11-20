@@ -69,7 +69,7 @@ function RowEditor({
       {draggable && (
         <button
           type="button"
-          aria-label={`Reorder ${row.name.trim() || fallbackNoun}`}
+          aria-label={`Siirrä ${row.name.trim() || fallbackNoun}`}
           onPointerDown={onDragPointerDown}
           onKeyDown={onHandleKeyDown}
           className="flex h-9 w-5 cursor-grab touch-none items-center justify-center rounded text-zinc-300 outline-none hover:text-zinc-500 focus-visible:ring-2 focus-visible:ring-emerald-500/40 active:cursor-grabbing dark:text-zinc-600 dark:hover:text-zinc-400"
@@ -98,7 +98,7 @@ function RowEditor({
           value={row.name}
           onChange={(e) => onName(capitalizeFirst(e.target.value))}
           placeholder={namePlaceholder}
-          aria-label={`${ariaPrefix} name`}
+          aria-label={`${ariaPrefix}: nimi`}
           className="w-full min-w-0 bg-transparent py-2.5 text-base font-medium outline-none placeholder:text-zinc-300 dark:placeholder:text-zinc-600 sm:text-sm"
         />
       </div>
@@ -110,14 +110,14 @@ function RowEditor({
           value={row.amount}
           onChange={(e) => onAmount(e.target.value)}
           placeholder="0"
-          aria-label={`${ariaPrefix} amount`}
+          aria-label={`${ariaPrefix}: summa`}
           className="w-full min-w-0 bg-transparent py-2.5 pl-1 text-base font-semibold tabular-nums outline-none placeholder:text-zinc-300 dark:placeholder:text-zinc-600 sm:text-sm"
         />
       </div>
       <button
         type="button"
         onClick={onRemove}
-        aria-label={`Remove ${row.name.trim() || fallbackNoun}`}
+        aria-label={`Poista ${row.name.trim() || fallbackNoun}`}
         className="flex h-9 w-9 items-center justify-center rounded-xl border border-zinc-200 text-zinc-400 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 dark:border-zinc-700 dark:hover:border-rose-800 dark:hover:bg-rose-950/40"
       >
         <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden>

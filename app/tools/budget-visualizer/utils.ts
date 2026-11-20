@@ -1,6 +1,8 @@
 // Generic helpers for the budget visualizer — nothing here encodes a budgeting
 // rule, so it could be lifted into an unrelated project unchanged.
 
+import { DATE_LOCALE } from "./constants";
+
 /** A fresh unique id for a newly added income/section row. */
 export const newRowId = () => crypto.randomUUID();
 
@@ -9,7 +11,7 @@ export const dateInMonths = (months: number) => {
   const date = new Date();
   date.setDate(1);
   date.setMonth(date.getMonth() + months);
-  return date.toLocaleDateString("en", { month: "short", year: "numeric" });
+  return date.toLocaleDateString(DATE_LOCALE, { month: "short", year: "numeric" });
 };
 
 /**

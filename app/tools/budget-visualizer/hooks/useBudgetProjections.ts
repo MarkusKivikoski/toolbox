@@ -21,10 +21,10 @@ export function useBudgetProjections(mode: Mode, plan: PlanData) {
         incomes,
         sections,
         mode === "trip"
-          ? "Under budget"
+          ? "Alle budjetin"
           : savings.enabled
-            ? "To savings"
-            : "Left to budget",
+            ? "Säästöön"
+            : "Jaettavaa jäljellä",
       ),
     [incomes, sections, mode, savings.enabled],
   );

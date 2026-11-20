@@ -46,6 +46,8 @@ export default function BudgetVisualizer() {
     reorderSections,
     setMode,
     resetPlan,
+    togglePaid,
+    clearAllPaid,
   } = useBudgetActions({ setState, setActiveId, setConfirmReset, setFocusRowId });
 
   const { listRef, dragId, startDrag } = useSectionDragReorder({
@@ -73,10 +75,10 @@ export default function BudgetVisualizer() {
   }, [confirmReset, resetPlan]);
 
   if (!hydrated) {
-    return <div className="text-sm text-zinc-500">Loading…</div>;
+    return <div className="text-sm text-zinc-500">Ladataan…</div>;
   }
 
-  const { remaining, allocated, overBudget, slices, income } = summary;
+  const { remaining, allocated, paid, unpaid, overBudget, slices, income } = summary;
   const perMonthNum = parseAmount(savings.perMonth);
   const monthsUntil = Math.max(0, Math.floor(parseAmount(savings.monthsUntilTrip)));
   const statusPill = computeStatusPill({
@@ -110,13 +112,13 @@ export default function BudgetVisualizer() {
           />
         ) : (
           <EuroField
-            label="Trip budget (optional)"
+            label="Matkabudjetti (valinnainen)"
             value={tripBudgetRow?.amount ?? ""}
             onChange={(value) =>
               tripBudgetRow &&
               updateRow("incomes", tripBudgetRow.id, { amount: value })
             }
-            ariaLabel="Trip budget"
+            ariaLabel="Matkabudjetti"
           />
         )}
 
@@ -163,10 +165,18 @@ export default function BudgetVisualizer() {
           slices={slices}
           income={income}
           allocated={allocated}
-          allocatedLabel={copy.allocatedLabel}
+          paid={paid}
+          unpaid={unpaid}
+          labels={{
+            allocated: copy.allocatedLabel,
+            paid: copy.paidLabel,
+            unpaid: copy.unpaidLabel,
+          }}
           emptyMessage={copy.emptyDoughnut}
           activeId={activeId}
           onActiveChange={setActiveId}
+          onTogglePaid={togglePaid}
+          onClearPaid={clearAllPaid}
         />
 
         {savings.enabled && mode === "salary" && (
@@ -183,8 +193,8 @@ export default function BudgetVisualizer() {
       </div>
 
       <p className="px-1 text-xs leading-relaxed text-zinc-400">
-        Everything stays in your browser — nothing is uploaded. Switch between a
-        monthly budget and a trip; each keeps its own figures.
+        Kaikki pysyy selaimessasi — mitään ei lähetetä minnekään. Voit vaihtaa
+        kuukausibudjetin ja matkan välillä; kummallakin on omat lukunsa.
       </p>
     </div>
   );

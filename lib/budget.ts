@@ -20,6 +20,8 @@ export type BudgetRow = {
   name: string;
   /** Free-typed euro amount, kept as a string so partial input survives. */
   amount: string;
+  /** Sections only: ticked off as already paid this month. Absent = unpaid. */
+  isPaid?: boolean;
 };
 
 export type BudgetSlice = {
@@ -31,12 +33,18 @@ export type BudgetSlice = {
   /** Hex fill for section slices; `null` for the themed remainder slice. */
   color: string | null;
   isRemainder: boolean;
+  /** Ticked as paid; always false for the remainder slice. */
+  isPaid: boolean;
 };
 
 export type BudgetSummary = {
   income: number;
   /** Sum of all section amounts. */
   allocated: number;
+  /** Sum of the section amounts ticked as paid. */
+  paid: number;
+  /** allocated − paid. */
+  unpaid: number;
   /** income − allocated (negative when over budget). */
   remaining: number;
   /** What the doughnut sums to: max(income, allocated). */
@@ -77,20 +85,22 @@ export function colorForIndex(index: number): string {
 export function computeBudget(
   incomes: BudgetRow[],
   sections: BudgetRow[],
-  remainderLabel = "Left to budget",
+  remainderLabel = "Jaettavaa jäljellä",
 ): BudgetSummary {
   const income = incomes.reduce((sum, i) => sum + parseAmount(i.amount), 0);
 
   const valued = sections
     .map((s, i) => ({
       id: s.id,
-      name: s.name.trim() || "Untitled",
+      name: s.name.trim() || "Nimetön",
       amount: parseAmount(s.amount),
       color: colorForIndex(i),
+      isPaid: s.isPaid === true,
     }))
     .filter((s) => s.amount > 0);
 
   const allocated = valued.reduce((sum, s) => sum + s.amount, 0);
+  const paid = valued.reduce((sum, s) => sum + (s.isPaid ? s.amount : 0), 0);
   const remaining = income - allocated;
   const total = Math.max(income, allocated);
   const overBudget = remaining < -BUDGET_EPSILON_EUR;
@@ -102,6 +112,7 @@ export function computeBudget(
     fraction: total > 0 ? s.amount / total : 0,
     color: s.color,
     isRemainder: false,
+    isPaid: s.isPaid,
   }));
 
   if (remaining > BUDGET_EPSILON_EUR) {
@@ -112,10 +123,20 @@ export function computeBudget(
       fraction: total > 0 ? remaining / total : 0,
       color: null,
       isRemainder: true,
+      isPaid: false,
     });
   }
 
-  return { income, allocated, remaining, total, overBudget, slices };
+  return {
+    income,
+    allocated,
+    paid,
+    unpaid: allocated - paid,
+    remaining,
+    total,
+    overBudget,
+    slices,
+  };
 }
 
 /**
@@ -224,6 +245,7 @@ function normalizeRow(s: unknown, i: number): BudgetRow {
     id: typeof o.id === "string" ? o.id : `row-${i}-${Date.now()}`,
     name: typeof o.name === "string" ? o.name : "",
     amount: typeof o.amount === "string" ? o.amount : "",
+    ...(o.isPaid === true ? { isPaid: true } : {}),
   };
 }
 
@@ -261,7 +283,7 @@ function normalizePlan(s: unknown, fallback: PlanData): PlanData {
   const incomes = Array.isArray(o.incomes)
     ? o.incomes.map(normalizeRow)
     : typeof o.income === "string"
-      ? [{ id: `income-0-${Date.now()}`, name: "Income", amount: o.income }]
+      ? [{ id: `income-0-${Date.now()}`, name: "Tulo", amount: o.income }]
       : fallback.incomes;
   return {
     incomes,
@@ -289,12 +311,20 @@ export function normalizeState(s: unknown, fallback: BudgetState): BudgetState {
   const trip = normalizePlan(o.trip, fallback.trip);
   // Trip mode renders a single budget field, so it always needs one income row.
   if (trip.incomes.length === 0) {
-    trip.incomes = [{ id: `trip-budget-${Date.now()}`, name: "Trip budget", amount: "" }];
+    trip.incomes = [{ id: `trip-budget-${Date.now()}`, name: "Matkabudjetti", amount: "" }];
   }
   return {
     mode: o.mode === "trip" ? "trip" : "salary",
     salary: normalizePlan(o.salary ?? (hasFlatPlan ? o : undefined), fallback.salary),
     trip,
+  };
+}
+
+/** The plan with every section's paid tick cleared. */
+export function clearPaid(plan: PlanData): PlanData {
+  return {
+    ...plan,
+    sections: plan.sections.map(({ id, name, amount }) => ({ id, name, amount })),
   };
 }
 
@@ -304,7 +334,7 @@ export function blankPlan(mode: Mode): PlanData {
     incomes: [
       {
         id: crypto.randomUUID(),
-        name: mode === "trip" ? "Trip budget" : "",
+        name: mode === "trip" ? "Matkabudjetti" : "",
         amount: "",
       },
     ],
@@ -341,26 +371,26 @@ export function computeStatusPill(args: {
   const { mode, allocated, income, overBudget, remaining, savingsEnabled } = args;
   if (mode === "trip") {
     if (allocated <= 0)
-      return { tone: "zinc", text: "Add trip costs to see the total" };
+      return { tone: "zinc", text: "Lisää matkan kuluja nähdäksesi kokonaissumman" };
     if (income <= 0)
-      return { tone: "zinc", text: `${formatEur(allocated)} total trip cost` };
+      return { tone: "zinc", text: `Matkan hinta yhteensä ${formatEur(allocated)}` };
     if (overBudget)
-      return { tone: "amber", text: `${formatEur(-remaining)} over budget` };
+      return { tone: "amber", text: `${formatEur(-remaining)} yli budjetin` };
     if (remaining < BUDGET_EPSILON_EUR)
-      return { tone: "emerald", text: "Right on budget 🎯" };
-    return { tone: "emerald", text: `${formatEur(remaining)} under budget` };
+      return { tone: "emerald", text: "Täsmälleen budjetissa 🎯" };
+    return { tone: "emerald", text: `${formatEur(remaining)} alle budjetin` };
   }
   if (income <= 0)
-    return { tone: "zinc", text: "Add your monthly income to see what's left" };
+    return { tone: "zinc", text: "Lisää kuukausitulosi nähdäksesi, mitä jää jäljelle" };
   if (overBudget)
-    return { tone: "amber", text: `${formatEur(-remaining)} over budget` };
+    return { tone: "amber", text: `${formatEur(-remaining)} yli budjetin` };
   if (remaining < BUDGET_EPSILON_EUR)
-    return { tone: "emerald", text: "Every euro allocated 🎉" };
+    return { tone: "emerald", text: "Jokainen euro jaettu 🎉" };
   return {
     tone: "emerald",
     text: savingsEnabled
-      ? `${formatEur(remaining)} going to savings`
-      : `${formatEur(remaining)} left to budget`,
+      ? `${formatEur(remaining)} menee säästöön`
+      : `${formatEur(remaining)} jaettavaa jäljellä`,
   };
 }
 
@@ -377,14 +407,14 @@ export function computeTripHeadline(
   perMonth: number,
 ): TripHeadline {
   if (tripProj.reached)
-    return { value: tripProj.target, unit: "", label: "saved — you're all set!" };
+    return { value: tripProj.target, unit: "", label: "säästetty — olet valmis!" };
   if (tripProj.requiredPerMonth !== null)
     return {
       value: tripProj.requiredPerMonth,
-      unit: " /mo",
-      label: "to save each month",
+      unit: " /kk",
+      label: "säästettävä kuukaudessa",
     };
   if (perMonth > 0)
-    return { value: perMonth, unit: " /mo", label: "you're saving each month" };
-  return { value: tripProj.target, unit: "", label: "total trip cost" };
+    return { value: perMonth, unit: " /kk", label: "säästät kuukaudessa" };
+  return { value: tripProj.target, unit: "", label: "matkan hinta yhteensä" };
 }
