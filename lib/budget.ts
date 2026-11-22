@@ -264,18 +264,32 @@ function normalizeSavings(s: unknown): SavingsState {
 
 export type Mode = "salary" | "trip";
 
-/** One mode's dataset. In trip mode `incomes` holds a single "budget" row. */
+/** The dataset the form edits. In trip mode `incomes` holds a single "budget" row. */
 export type PlanData = {
   incomes: BudgetRow[];
   sections: BudgetRow[];
   savings: SavingsState;
 };
 
+/** A calendar month as "YYYY-MM" (sorts chronologically as a plain string). */
+export type MonthKey = string;
+
+export const MONTH_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** What differs from month to month; savings are shared and live on the state. */
+export type MonthPlan = Pick<PlanData, "incomes" | "sections">;
+
 export type BudgetState = {
   mode: Mode;
-  salary: PlanData;
+  /** Monthly budgets by month; a month with no entry hasn't been started yet. */
+  months: Record<MonthKey, MonthPlan>;
+  /** One savings goal shared by every month. */
+  salarySavings: SavingsState;
   trip: PlanData;
 };
+
+/** The pre-months (v1) shape: one undated salary plan carrying its own savings. */
+type LegacyBudgetState = { mode: Mode; salary: PlanData; trip: PlanData };
 
 function normalizePlan(s: unknown, fallback: PlanData): PlanData {
   // v1 stored a single `income` string; carry it into one income row.
@@ -296,8 +310,53 @@ function normalizePlan(s: unknown, fallback: PlanData): PlanData {
   };
 }
 
+function normalizeMonthPlan(s: unknown): MonthPlan {
+  const o = (s ?? {}) as Partial<MonthPlan>;
+  return {
+    incomes: Array.isArray(o.incomes) ? o.incomes.map(normalizeRow) : [],
+    sections: Array.isArray(o.sections) ? o.sections.map(normalizeRow) : [],
+  };
+}
+
+/** Trip mode renders a single budget field, so it always needs one income row. */
+function withTripBudgetRow(trip: PlanData): PlanData {
+  if (trip.incomes.length > 0) return trip;
+  return {
+    ...trip,
+    incomes: [{ id: `trip-budget-${Date.now()}`, name: "Matkabudjetti", amount: "" }],
+  };
+}
+
 export function normalizeState(s: unknown, fallback: BudgetState): BudgetState {
-  const o = (s ?? {}) as Partial<BudgetState> & {
+  const o = (s ?? {}) as Partial<BudgetState>;
+  const months: Record<MonthKey, MonthPlan> = {};
+  const hasStoredMonths = o.months != null && typeof o.months === "object";
+  if (hasStoredMonths) {
+    for (const [key, plan] of Object.entries(o.months as object)) {
+      if (MONTH_KEY_PATTERN.test(key)) months[key] = normalizeMonthPlan(plan);
+    }
+  }
+  return {
+    mode: o.mode === "trip" ? "trip" : "salary",
+    months: hasStoredMonths ? months : fallback.months,
+    salarySavings:
+      o.salarySavings != null
+        ? normalizeSavings(o.salarySavings)
+        : fallback.salarySavings,
+    trip: withTripBudgetRow(normalizePlan(o.trip, fallback.trip)),
+  };
+}
+
+/**
+ * Carry a pre-months (v1) save into the months model: its salary plan becomes
+ * `monthKey`'s budget and its savings become the shared savings.
+ */
+export function migrateLegacyState(
+  s: unknown,
+  fallback: Pick<LegacyBudgetState, "salary" | "trip">,
+  monthKey: MonthKey,
+): BudgetState {
+  const o = (s ?? {}) as Partial<LegacyBudgetState> & {
     // pre-mode saves stored the salary plan's fields at the top level.
     incomes?: unknown;
     sections?: unknown;
@@ -308,17 +367,87 @@ export function normalizeState(s: unknown, fallback: BudgetState): BudgetState {
     Array.isArray(o.incomes) ||
     Array.isArray(o.sections) ||
     typeof o.income === "string";
-  const trip = normalizePlan(o.trip, fallback.trip);
-  // Trip mode renders a single budget field, so it always needs one income row.
-  if (trip.incomes.length === 0) {
-    trip.incomes = [{ id: `trip-budget-${Date.now()}`, name: "Matkabudjetti", amount: "" }];
-  }
+  const salary = normalizePlan(o.salary ?? (hasFlatPlan ? o : undefined), fallback.salary);
   return {
     mode: o.mode === "trip" ? "trip" : "salary",
-    salary: normalizePlan(o.salary ?? (hasFlatPlan ? o : undefined), fallback.salary),
-    trip,
+    months: { [monthKey]: { incomes: salary.incomes, sections: salary.sections } },
+    salarySavings: salary.savings,
+    trip: withTripBudgetRow(normalizePlan(o.trip, fallback.trip)),
   };
 }
+
+/**
+ * The plan the form shows: the trip plan, or the given month's budget joined
+ * with the shared savings. `null` when that month hasn't been started.
+ */
+export function selectPlan(state: BudgetState, month: MonthKey): PlanData | null {
+  if (state.mode === "trip") return state.trip;
+  const monthPlan = state.months[month];
+  return monthPlan ? { ...monthPlan, savings: state.salarySavings } : null;
+}
+
+/** Apply an edit to the plan `selectPlan` returns, writing each part back to where it lives. */
+export function applyPlanUpdate(
+  state: BudgetState,
+  month: MonthKey,
+  update: (plan: PlanData) => PlanData,
+): BudgetState {
+  const plan = selectPlan(state, month);
+  if (!plan) return state;
+  const next = update(plan);
+  if (state.mode === "trip") return { ...state, trip: next };
+  return {
+    ...state,
+    months: {
+      ...state.months,
+      [month]: { incomes: next.incomes, sections: next.sections },
+    },
+    salarySavings: next.savings,
+  };
+}
+
+/**
+ * The month to copy a new month from: the latest earlier one, or — when
+ * nothing precedes it — the earliest later one. `null` when there are none.
+ */
+export function sourceMonthFor(keys: MonthKey[], month: MonthKey): MonthKey | null {
+  const sorted = keys.filter((key) => key !== month).sort();
+  const earlier = sorted.filter((key) => key < month);
+  if (earlier.length > 0) return earlier[earlier.length - 1];
+  return sorted[0] ?? null;
+}
+
+/**
+ * Roll a finished month's leftover into the shared savings balance. A month
+ * that ended over budget adds nothing; disabled savings are left untouched.
+ */
+export function carryLeftoverIntoSavings(
+  savings: SavingsState,
+  finishedMonth: MonthPlan,
+): SavingsState {
+  if (!savings.enabled) return savings;
+  const { remaining } = computeBudget(finishedMonth.incomes, finishedMonth.sections);
+  if (remaining <= BUDGET_EPSILON_EUR) return savings;
+  const cents = Math.round((parseAmount(savings.balance) + remaining) * 100);
+  return { ...savings, balance: String(cents / 100) };
+}
+
+/** A month's budget carried into a new month: same lines, fresh ids, nothing paid yet. */
+export function copyMonthPlan(plan: MonthPlan): MonthPlan {
+  const copyRow = ({ name, amount }: BudgetRow): BudgetRow => ({
+    id: crypto.randomUUID(),
+    name,
+    amount,
+  });
+  return { incomes: plan.incomes.map(copyRow), sections: plan.sections.map(copyRow) };
+}
+
+/** An empty month: one blank income row and one blank section. */
+export function blankMonthPlan(): MonthPlan {
+  const { incomes, sections } = blankPlan("salary");
+  return { incomes, sections };
+}
+
 
 /** The plan with every section's paid tick cleared. */
 export function clearPaid(plan: PlanData): PlanData {

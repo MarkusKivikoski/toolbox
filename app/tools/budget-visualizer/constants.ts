@@ -1,3 +1,5 @@
+import type { PlanData } from "@/lib/budget";
+
 /** How long the reset button stays in its "tap again to confirm" state. */
 export const RESET_CONFIRM_TIMEOUT_MS = 3000;
 
@@ -15,3 +17,16 @@ export const DATE_LOCALE = "fi";
 
 /** Finnish unit labels for `formatDuration` ("3 v 4 kk"). */
 export const FINNISH_DURATION_UNITS = { year: "v", month: "kk" } as const;
+
+/** Stand-in plan for a month that hasn't been started, so hooks always get a plan. */
+export const EMPTY_PLAN: PlanData = {
+  incomes: [],
+  sections: [],
+  savings: {
+    enabled: false,
+    balance: "",
+    target: "",
+    perMonth: "",
+    monthsUntilTrip: "",
+  },
+};

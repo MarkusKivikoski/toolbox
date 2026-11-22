@@ -8,8 +8,15 @@ import {
   blankPlan,
   clearPaid,
   normalizeState,
+  migrateLegacyState,
+  selectPlan,
+  applyPlanUpdate,
+  sourceMonthFor,
+  copyMonthPlan,
+  carryLeftoverIntoSavings,
   REMAINDER_ID,
   type BudgetRow,
+  type BudgetState,
 } from "@/lib/budget";
 
 const row = (name: string, amount: string): BudgetRow => ({
@@ -237,23 +244,114 @@ describe("paid tracking", () => {
   });
 
   it("normalizeState keeps ticks and backfills old saves without them", () => {
-    const fallback = {
-      mode: "salary" as const,
-      salary: blankPlan("salary"),
-      trip: blankPlan("trip"),
-    };
     const stored = {
       mode: "salary",
-      salary: {
-        incomes: [],
-        sections: [
-          { id: "a", name: "Rent", amount: "900", isPaid: true },
-          { id: "b", name: "Food", amount: "300" },
-        ],
+      months: {
+        "2026-11": {
+          incomes: [],
+          sections: [
+            { id: "a", name: "Rent", amount: "900", isPaid: true },
+            { id: "b", name: "Food", amount: "300" },
+          ],
+        },
       },
     };
-    const state = normalizeState(stored, fallback);
-    expect(state.salary.sections[0].isPaid).toBe(true);
-    expect(state.salary.sections[1].isPaid).toBeUndefined();
+    const state = normalizeState(stored, baseState);
+    expect(state.months["2026-11"].sections[0].isPaid).toBe(true);
+    expect(state.months["2026-11"].sections[1].isPaid).toBeUndefined();
+  });
+});
+
+const baseState: BudgetState = {
+  mode: "salary",
+  months: {},
+  salarySavings: blankPlan("salary").savings,
+  trip: blankPlan("trip"),
+};
+
+describe("months", () => {
+  const monthPlan = (name: string) => ({
+    incomes: [row("Salary", "2000")],
+    sections: [{ ...row(name, "500"), isPaid: true }],
+  });
+
+  it("migrates a v1 save into the given month with shared savings", () => {
+    const savings = { ...blankPlan("salary").savings, enabled: true, balance: "100" };
+    const legacy = {
+      mode: "salary",
+      salary: { ...monthPlan("Rent"), savings },
+      trip: blankPlan("trip"),
+    };
+    const state = migrateLegacyState(
+      legacy,
+      { salary: blankPlan("salary"), trip: blankPlan("trip") },
+      "2026-11",
+    );
+    expect(Object.keys(state.months)).toEqual(["2026-11"]);
+    expect(state.months["2026-11"].sections[0].name).toBe("Rent");
+    expect(state.salarySavings.balance).toBe("100");
+  });
+
+  it("drops stored months with invalid keys", () => {
+    const state = normalizeState(
+      { months: { "2026-11": monthPlan("A"), nonsense: monthPlan("B") } },
+      baseState,
+    );
+    expect(Object.keys(state.months)).toEqual(["2026-11"]);
+  });
+
+  it("selectPlan is null for an unstarted month and joins shared savings otherwise", () => {
+    const state = { ...baseState, months: { "2026-11": monthPlan("Rent") } };
+    expect(selectPlan(state, "2026-12")).toBeNull();
+    expect(selectPlan(state, "2026-11")?.savings).toBe(state.salarySavings);
+  });
+
+  it("applyPlanUpdate edits one month and shares savings across months", () => {
+    const state = {
+      ...baseState,
+      months: { "2026-10": monthPlan("Old"), "2026-11": monthPlan("Rent") },
+    };
+    const next = applyPlanUpdate(state, "2026-11", (plan) => ({
+      ...plan,
+      sections: [],
+      savings: { ...plan.savings, balance: "999" },
+    }));
+    expect(next.months["2026-11"].sections).toEqual([]);
+    expect(next.months["2026-10"].sections[0].name).toBe("Old");
+    expect(selectPlan(next, "2026-10")?.savings.balance).toBe("999");
+  });
+
+  it("applyPlanUpdate leaves an unstarted month alone", () => {
+    expect(applyPlanUpdate(baseState, "2026-11", (plan) => plan)).toBe(baseState);
+  });
+
+  it("sourceMonthFor prefers the latest earlier month, else the earliest later", () => {
+    expect(sourceMonthFor(["2026-08", "2026-10", "2027-01"], "2026-11")).toBe("2026-10");
+    expect(sourceMonthFor(["2027-01", "2026-12"], "2026-11")).toBe("2026-12");
+    expect(sourceMonthFor(["2026-11"], "2026-11")).toBeNull();
+  });
+
+  it("copyMonthPlan keeps lines, gives fresh ids and clears paid ticks", () => {
+    const original = monthPlan("Rent");
+    const copy = copyMonthPlan(original);
+    expect(copy.sections[0].name).toBe("Rent");
+    expect(copy.sections[0].amount).toBe("500");
+    expect(copy.sections[0].isPaid).toBeUndefined();
+    expect(copy.sections[0].id).not.toBe(original.sections[0].id);
+  });
+
+  it("carryLeftoverIntoSavings adds the leftover to the balance", () => {
+    const savings = { ...blankPlan("salary").savings, enabled: true, balance: "100.50" };
+    const month = { incomes: [row("Salary", "2000")], sections: [row("Rent", "1500")] };
+    expect(carryLeftoverIntoSavings(savings, month).balance).toBe("600.5");
+  });
+
+  it("carryLeftoverIntoSavings ignores overspend and disabled savings", () => {
+    const enabled = { ...blankPlan("salary").savings, enabled: true, balance: "100" };
+    const over = { incomes: [row("Salary", "1000")], sections: [row("Rent", "1500")] };
+    expect(carryLeftoverIntoSavings(enabled, over)).toBe(enabled);
+    const disabled = { ...enabled, enabled: false };
+    const under = { incomes: [row("Salary", "2000")], sections: [] };
+    expect(carryLeftoverIntoSavings(disabled, under)).toBe(disabled);
   });
 });

@@ -1,4 +1,5 @@
 import type { Mode, SavingsState } from "@/lib/budget";
+import { MONTH_COPY } from "../copy";
 import EuroField from "./EuroField";
 
 type Props = {
@@ -25,6 +26,8 @@ export default function SavingsInputs({ mode, savings, onChange }: Props) {
 
       {savings.enabled &&
         (mode === "salary" ? (
+          <>
+            <p className="mt-2 text-xs text-zinc-400">{MONTH_COPY.sharedSavingsHint}</p>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:gap-3">
             <EuroField
               label="Nykyiset säästöt"
@@ -39,6 +42,7 @@ export default function SavingsInputs({ mode, savings, onChange }: Props) {
               ariaLabel="Säästötavoite"
             />
           </div>
+          </>
         ) : (
           <div className="mt-3 space-y-2">
             <div className="grid grid-cols-2 gap-2 sm:gap-3">
