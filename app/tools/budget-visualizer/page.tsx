@@ -5,7 +5,7 @@ import BudgetVisualizer from "./BudgetVisualizer";
 export const metadata: Metadata = {
   title: "Budjettinäkymä",
   description:
-    "Jaa kuukausibudjetti tai matkan kulut kehädiagrammille ja seuraa säästötavoitetta — keskellä näkyy, mitä jää jäljelle.",
+    "Jaa kuukausibudjetti tai matkan kulut kehädiagrammille ja seuraa säästötavoitetta.",
 };
 
 export default function BudgetVisualizerPage() {

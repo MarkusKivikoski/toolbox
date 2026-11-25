@@ -53,6 +53,7 @@ export default function BudgetVisualizer() {
     resetPlan,
     togglePaid,
     clearAllPaid,
+    spendingActions,
   } = useBudgetActions({
     month,
     examplePlan: EXAMPLE_MONTH_PLAN,
@@ -167,6 +168,7 @@ export default function BudgetVisualizer() {
           salaryProj={salaryProj}
           tripProj={tripProj}
           activeId={activeId}
+          spendingActions={spendingActions}
           onActiveChange={setActiveId}
           onTogglePaid={togglePaid}
           onClearPaid={clearAllPaid}

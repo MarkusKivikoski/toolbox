@@ -1,7 +1,7 @@
 import type { BudgetSlice } from "@/lib/budget";
-import { formatEur, formatPercent } from "@/lib/format";
 import { PAID_COPY } from "../copy";
-import { PERCENT_LOCALE } from "../constants";
+import type { SpendingActions } from "../hooks/useSpendingActions";
+import BudgetLegendRow from "./BudgetLegendRow";
 import LegendTotalRow from "./LegendTotalRow";
 
 type Props = {
@@ -13,14 +13,16 @@ type Props = {
   labels: { allocated: string; paid: string; unpaid: string };
   emptyMessage: string;
   activeId: string | null;
+  spendingActions: SpendingActions;
   onActiveChange: (id: string | null) => void;
   onTogglePaid: (id: string) => void;
   onClearPaid: () => void;
 };
 
 /**
- * The list beneath the doughnut: one row per slice with a "paid" tick, plus
- * allocated / paid / unpaid totals (the last two once something is ticked).
+ * The list beneath the doughnut: one row per slice with a "paid" tick and an
+ * expandable spending log, plus allocated / paid / unpaid totals (the last two
+ * once something is ticked).
  */
 export default function BudgetLegend({
   slices,
@@ -31,6 +33,7 @@ export default function BudgetLegend({
   labels,
   emptyMessage,
   activeId,
+  spendingActions,
   onActiveChange,
   onTogglePaid,
   onClearPaid,
@@ -45,61 +48,16 @@ export default function BudgetLegend({
 
   return (
     <ul className="mt-4 space-y-1">
-      {slices.map((slice) => {
-        const isActive = slice.id === activeId;
-        return (
-          <li
-            key={slice.id}
-            onMouseEnter={() => onActiveChange(slice.id)}
-            onMouseLeave={() => onActiveChange(null)}
-            className={`flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors ${
-              isActive ? "bg-zinc-100 dark:bg-zinc-800" : ""
-            }`}
-          >
-            {slice.isRemainder ? (
-              <span className="h-4 w-4 shrink-0" aria-hidden />
-            ) : (
-              <input
-                type="checkbox"
-                checked={slice.isPaid}
-                onChange={() => onTogglePaid(slice.id)}
-                aria-label={PAID_COPY.markPaid(slice.name)}
-                className="h-4 w-4 shrink-0 cursor-pointer accent-emerald-500"
-              />
-            )}
-            <span
-              className={`h-3 w-3 shrink-0 rounded-full ${
-                slice.isRemainder ? "bg-zinc-200 dark:bg-zinc-700" : ""
-              }`}
-              style={{ backgroundColor: slice.color ?? undefined }}
-              aria-hidden
-            />
-            <span
-              className={`min-w-0 flex-1 truncate text-sm ${
-                slice.isRemainder
-                  ? "text-zinc-500 dark:text-zinc-400"
-                  : slice.isPaid
-                    ? "text-zinc-400 line-through dark:text-zinc-500"
-                    : "text-zinc-700 dark:text-zinc-200"
-              }`}
-            >
-              {slice.name}
-            </span>
-            <span className="shrink-0 text-xs tabular-nums text-zinc-400">
-              {formatPercent(slice.fraction, { locale: PERCENT_LOCALE })}
-            </span>
-            <span
-              className={`w-20 shrink-0 text-right text-sm font-semibold tabular-nums ${
-                slice.isPaid
-                  ? "text-zinc-400 dark:text-zinc-500"
-                  : "text-zinc-900 dark:text-zinc-100"
-              }`}
-            >
-              {formatEur(slice.amount)}
-            </span>
-          </li>
-        );
-      })}
+      {slices.map((slice) => (
+        <BudgetLegendRow
+          key={slice.id}
+          slice={slice}
+          isActive={slice.id === activeId}
+          spendingActions={spendingActions}
+          onActiveChange={onActiveChange}
+          onTogglePaid={onTogglePaid}
+        />
+      ))}
 
       <LegendTotalRow
         isFirst

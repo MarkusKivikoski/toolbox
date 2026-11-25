@@ -5,6 +5,12 @@
 // remainder) with the fractions and colours the chart needs.
 
 import { formatEur } from "@/lib/format";
+import {
+  computeSpending,
+  normalizeSpending,
+  type SpendingEntry,
+  type SpendingSummary,
+} from "@/lib/budgetSpending";
 import { parseAmount } from "@/lib/utils";
 
 /**
@@ -22,6 +28,12 @@ export type BudgetRow = {
   amount: string;
   /** Sections only: ticked off as already paid this month. Absent = unpaid. */
   isPaid?: boolean;
+  /**
+   * Sections only: purchases logged against this line. Absent = not tracked.
+   * Never counted in the budget totals — it only shows how much of the
+   * section's amount has been used.
+   */
+  spending?: SpendingEntry[];
 };
 
 export type BudgetSlice = {
@@ -35,6 +47,8 @@ export type BudgetSlice = {
   isRemainder: boolean;
   /** Ticked as paid; always false for the remainder slice. */
   isPaid: boolean;
+  /** How much of the amount the spending log has used; null when untracked. */
+  spending: SpendingSummary | null;
 };
 
 export type BudgetSummary = {
@@ -90,13 +104,17 @@ export function computeBudget(
   const income = incomes.reduce((sum, i) => sum + parseAmount(i.amount), 0);
 
   const valued = sections
-    .map((s, i) => ({
-      id: s.id,
-      name: s.name.trim() || "Nimetön",
-      amount: parseAmount(s.amount),
-      color: colorForIndex(i),
-      isPaid: s.isPaid === true,
-    }))
+    .map((s, i) => {
+      const amount = parseAmount(s.amount);
+      return {
+        id: s.id,
+        name: s.name.trim() || "Nimetön",
+        amount,
+        color: colorForIndex(i),
+        isPaid: s.isPaid === true,
+        spending: computeSpending(s.spending, amount),
+      };
+    })
     .filter((s) => s.amount > 0);
 
   const allocated = valued.reduce((sum, s) => sum + s.amount, 0);
@@ -113,6 +131,7 @@ export function computeBudget(
     color: s.color,
     isRemainder: false,
     isPaid: s.isPaid,
+    spending: s.spending,
   }));
 
   if (remaining > BUDGET_EPSILON_EUR) {
@@ -124,6 +143,7 @@ export function computeBudget(
       color: null,
       isRemainder: true,
       isPaid: false,
+      spending: null,
     });
   }
 
@@ -241,11 +261,13 @@ export function computeTripSavings(
 /** Backfill a stored row so older saves don't crash on load. */
 function normalizeRow(s: unknown, i: number): BudgetRow {
   const o = (s ?? {}) as Partial<BudgetRow>;
+  const spending = normalizeSpending(o.spending);
   return {
     id: typeof o.id === "string" ? o.id : `row-${i}-${Date.now()}`,
     name: typeof o.name === "string" ? o.name : "",
     amount: typeof o.amount === "string" ? o.amount : "",
     ...(o.isPaid === true ? { isPaid: true } : {}),
+    ...(spending ? { spending } : {}),
   };
 }
 
@@ -432,7 +454,10 @@ export function carryLeftoverIntoSavings(
   return { ...savings, balance: String(cents / 100) };
 }
 
-/** A month's budget carried into a new month: same lines, fresh ids, nothing paid yet. */
+/**
+ * A month's budget carried into a new month: same lines, fresh ids, nothing
+ * paid yet and no spending logged (the new month starts its budgets full).
+ */
 export function copyMonthPlan(plan: MonthPlan): MonthPlan {
   const copyRow = ({ name, amount }: BudgetRow): BudgetRow => ({
     id: crypto.randomUUID(),
@@ -449,11 +474,15 @@ export function blankMonthPlan(): MonthPlan {
 }
 
 
-/** The plan with every section's paid tick cleared. */
+/** The plan with every section's paid tick cleared; everything else is kept. */
 export function clearPaid(plan: PlanData): PlanData {
   return {
     ...plan,
-    sections: plan.sections.map(({ id, name, amount }) => ({ id, name, amount })),
+    sections: plan.sections.map((section) => {
+      const cleared = { ...section };
+      delete cleared.isPaid;
+      return cleared;
+    }),
   };
 }
 

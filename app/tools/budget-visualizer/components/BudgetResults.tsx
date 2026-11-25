@@ -9,6 +9,7 @@ import {
 } from "@/lib/budget";
 import { parseAmount } from "@/lib/utils";
 import { COPY, TONE } from "../copy";
+import type { SpendingActions } from "../hooks/useSpendingActions";
 import BudgetDoughnut from "./BudgetDoughnut";
 import BudgetLegend from "./BudgetLegend";
 import SalarySavingsPanel from "./SalarySavingsPanel";
@@ -21,6 +22,7 @@ type Props = {
   salaryProj: SavingsProjection;
   tripProj: TripSavings;
   activeId: string | null;
+  spendingActions: SpendingActions;
   onActiveChange: (id: string | null) => void;
   onTogglePaid: (id: string) => void;
   onClearPaid: () => void;
@@ -34,6 +36,7 @@ export default function BudgetResults({
   salaryProj,
   tripProj,
   activeId,
+  spendingActions,
   onActiveChange,
   onTogglePaid,
   onClearPaid,
@@ -82,6 +85,7 @@ export default function BudgetResults({
         }}
         emptyMessage={copy.emptyDoughnut}
         activeId={activeId}
+        spendingActions={spendingActions}
         onActiveChange={onActiveChange}
         onTogglePaid={onTogglePaid}
         onClearPaid={onClearPaid}

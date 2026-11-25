@@ -125,6 +125,20 @@ export const MONTH_COPY = {
   sharedSavingsHint: "Säästöt ovat yhteiset kaikille kuukausille.",
 } as const;
 
+/** Wording for the per-section spending log shown under each legend row. */
+export const SPENDING_COPY = {
+  toggle: (name: string) => `Menot: ${name}`,
+  meter: (name: string) => `${name}: käytetty`,
+  entry: (sectionName: string, position: number) => `${sectionName}, meno ${position}`,
+  empty: "Ei vielä menoja — kirjaa ostokset tähän nähdäksesi, paljonko summasta on käytetty.",
+  add: "Lisää meno",
+  namePlaceholder: "Mitä ostit?",
+  fallbackNoun: "meno",
+  used: (amount: string) => `${amount} käytetty`,
+  left: (amount: string) => `${amount} jäljellä`,
+  over: (amount: string) => `${amount} yli`,
+} as const;
+
 /** Mode-independent wording for the paid-tracking UI. */
 export const PAID_COPY = {
   allPaid: "Kaikki maksettu ✓",

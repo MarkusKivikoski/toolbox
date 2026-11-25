@@ -17,6 +17,7 @@ import {
   type SavingsState,
 } from "@/lib/budget";
 import { newRowId, reorderById } from "../utils";
+import { useSpendingActions } from "./useSpendingActions";
 
 /** Which list within a plan an action targets. */
 export type RowField = "incomes" | "sections";
@@ -53,6 +54,8 @@ export function useBudgetActions({
       setState((prev) => applyPlanUpdate(prev, month, update)),
     [setState, month],
   );
+
+  const spendingActions = useSpendingActions(patchPlan);
 
   const updateSavings = useCallback(
     (patch: Partial<SavingsState>) =>
@@ -183,6 +186,7 @@ export function useBudgetActions({
     setMode,
     togglePaid,
     clearAllPaid,
+    spendingActions,
     startMonth,
     resetPlan,
   };
